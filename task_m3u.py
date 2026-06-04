@@ -214,11 +214,20 @@ class TaskM3U(TaskBase):
         text = TaskM3U._normalize_static_host_logo_url(url_value)
         if not text:
             return ''
+        base = str(base_url or '').rstrip('/')
         if TaskM3U.FF_URL_PLACEHOLDER in text:
-            base = str(base_url or '').rstrip('/')
             if base:
                 return text.replace(TaskM3U.FF_URL_PLACEHOLDER, base)
             return text.replace(TaskM3U.FF_URL_PLACEHOLDER, '')
+        if text.startswith('//'):
+            return text
+        if text.startswith('http://') or text.startswith('https://'):
+            return text
+        if text.startswith(TaskM3U.STATIC_HOST_PATH.rstrip('/') + '/'):
+            return f'{base}{text}' if base else text
+        static_relative = TaskM3U.STATIC_HOST_PATH.strip('/') + '/'
+        if text.startswith(static_relative):
+            return f'{base}/{text}' if base else f'/{text}'
         return text
 
     @staticmethod
