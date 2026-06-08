@@ -237,9 +237,17 @@ class TaskM3U(TaskBase):
             return request.host_url.rstrip('/')
         except Exception:
             pass
-        # Flask context 밖에서는 설정값으로 fallback
-        fallback = TaskM3U._safe_model_setting_get('basic_server_url', '').rstrip('/')
-        return fallback
+        # Flask context 밖(스케줄러)일 때 EPG URL에서 추출
+        try:
+            from urllib.parse import urlsplit
+            epg_url = str(P.ModelSetting.get('basic_epg_url') or '').strip()
+            if epg_url:
+                parts = urlsplit(epg_url)
+                if parts.scheme and parts.netloc:
+                    return f'{parts.scheme}://{parts.netloc}'
+        except Exception:
+            pass
+        return ''
 
     @staticmethod
     def _get_logo_priority():
