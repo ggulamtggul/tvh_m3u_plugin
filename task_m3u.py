@@ -236,7 +236,10 @@ class TaskM3U(TaskBase):
             from flask import request
             return request.host_url.rstrip('/')
         except Exception:
-            return ''
+            pass
+        # Flask context 밖에서는 설정값으로 fallback
+        fallback = TaskM3U._safe_model_setting_get('basic_server_url', '').rstrip('/')
+        return fallback
 
     @staticmethod
     def _get_logo_priority():
