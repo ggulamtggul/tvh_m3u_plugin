@@ -18,7 +18,7 @@ import requests
 from flask import request, render_template, jsonify, redirect, Response, render_template_string
 
 from .setup import *
-from .model import ModelTag, ModelChannel, ModelGroupOrder, ModelGroupProfile, ModelChannelProfile, ModelLogoOverride, DB_PATH
+from .model import ModelTag, ModelChannel, ModelGroupOrder, ModelGroupProfile, ModelChannelProfile, ModelLogoOverride, ModelEPGOverride, DB_PATH
 from .task import Task
 from .task_custom_logo import handle_custom_logo_upload, handle_custom_logo_mirror
 from .task_epg_extra import build_dlive_epg_xml_bytes, merge_xmltv_files, DEFAULT_DLIVE_SCHEDULE_URL, DEFAULT_DLIVE_SOURCE_NAME
@@ -497,6 +497,12 @@ def _build_epg_tvh_cache(xml_path=None):
     except Exception as e:
         logger.warning(f'[ff_tvh_m3u] load db rules for epg tvh cache failed: {str(e)}')
 
+    override_map = {}
+    try:
+        override_map = ModelEPGOverride.get_map()
+    except Exception as e:
+        logger.warning(f'[ff_tvh_m3u] load epg override map failed: {str(e)}')
+
     def append_unique(values, value):
         text = str(value or '').strip()
         if text and text not in values:
@@ -602,6 +608,8 @@ def _build_epg_tvh_cache(xml_path=None):
         elif tag == 'programme':
             elem.clear()
 
+    epg_id_to_entry = {item['channel_id']: item for item in epg_entries}
+
     selected_channels = []
     raw_id_to_uuids = {}
     matched_count = 0
@@ -654,15 +662,24 @@ def _build_epg_tvh_cache(xml_path=None):
 
         selected = None
         match_rule = ''
-        for provider_key in provider_match_order:
-            for search_key in search_keys:
-                candidate = epg_index.get(search_key, {}).get(provider_key)
-                if candidate is not None:
-                    selected = candidate
-                    match_rule = 'exact'
-                    break
+
+        override_info = override_map.get(channel_uuid)
+        if override_info:
+            epg_id = override_info.get('epg_id')
+            selected = epg_id_to_entry.get(epg_id)
             if selected is not None:
-                break
+                match_rule = 'manual'
+
+        if selected is None:
+            for provider_key in provider_match_order:
+                for search_key in search_keys:
+                    candidate = epg_index.get(search_key, {}).get(provider_key)
+                    if candidate is not None:
+                        selected = candidate
+                        match_rule = 'exact'
+                        break
+                if selected is not None:
+                    break
 
         if selected is None:
             selected, match_rule = find_fallback_candidate(search_keys)
@@ -963,6 +980,14 @@ def _prepare_epg_xml_from_url(url, verify_ssl=True, timeout=60):
 def _fetch_epg_and_build_meta(url, verify_ssl=True):
     xml_path = _prepare_epg_xml_from_url(url, verify_ssl=verify_ssl)
     summary = _summarize_epg_xml(xml_path)
+
+    try:
+        channels_json_path = os.path.join(_epg_cache_dir(), 'myepg_channels.json')
+        with open(channels_json_path, 'w', encoding='utf-8') as f:
+            json.dump(summary.get('sample_channels', []), f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f'[ff_tvh_m3u] save myepg_channels.json failed: {str(e)}')
+
     tvh_summary = _build_epg_tvh_cache(xml_path)
     meta = {
         'ret': 'success',
@@ -1596,6 +1621,110 @@ class ModuleBasic(PluginModuleBase):
 
             elif sub == 'epg_status':
                 return jsonify(_get_epg_status_payload())
+
+            elif sub == 'epg_matching_list':
+                channels = ModelChannel.get_all()
+                override_map = ModelEPGOverride.get_map()
+                
+                match_info_map = {}
+                try:
+                    with open(_epg_cache_match_json_path(), 'r', encoding='utf-8') as f:
+                        match_data = json.load(f)
+                        for r in match_data.get('rows', []):
+                            match_info_map[r['channel_uuid']] = r
+                except Exception:
+                    pass
+
+                list_data = []
+                for ch in channels:
+                    if not ch.enabled:
+                        continue
+                    uuid = ch.channel_uuid
+                    override = override_map.get(uuid)
+                    match_detail = match_info_map.get(uuid, {})
+                    
+                    list_data.append({
+                        'channel_uuid': uuid,
+                        'channel_name': ch.name,
+                        'group_name': ch.get_effective_group_name(),
+                        'is_manual': override is not None,
+                        'manual_epg_id': override.get('epg_id') if override else '',
+                        'manual_epg_name': override.get('epg_name') if override else '',
+                        'matched': match_detail.get('matched', False) if not override else True,
+                        'matched_epg_id': override.get('epg_id') if override else match_detail.get('source_channel_id', ''),
+                        'matched_epg_name': override.get('epg_name') if override else (match_detail.get('source_display_names')[0] if match_detail.get('source_display_names') else ''),
+                        'match_rule': 'manual' if override else match_detail.get('match_rule', ''),
+                    })
+                return jsonify({'ret': 'success', 'list': list_data})
+
+            elif sub == 'epg_xml_channels':
+                keyword = str(request.form.get('keyword') or request.args.get('keyword') or '').strip().lower()
+                channels_json_path = os.path.join(_epg_cache_dir(), 'myepg_channels.json')
+                
+                if not os.path.exists(channels_json_path):
+                    raw_xml = _epg_cache_xml_path()
+                    if os.path.exists(raw_xml):
+                        try:
+                            summary = _summarize_epg_xml(raw_xml)
+                            with open(channels_json_path, 'w', encoding='utf-8') as f:
+                                json.dump(summary.get('sample_channels', []), f, ensure_ascii=False, indent=2)
+                        except Exception as e:
+                            logger.warning(f'[ff_tvh_m3u] build channels.json fallback failed: {str(e)}')
+                
+                if not os.path.exists(channels_json_path):
+                    return jsonify({'ret': 'warning', 'msg': 'EPG 캐시 정보가 없습니다. EPG 원본을 먼저 불러오세요.', 'list': []})
+
+                try:
+                    with open(channels_json_path, 'r', encoding='utf-8') as f:
+                        all_epg_channels = json.load(f)
+                except Exception as e:
+                    return jsonify({'ret': 'danger', 'msg': f'EPG 채널 정보를 읽지 못했습니다: {str(e)}', 'list': []})
+
+                if not keyword:
+                    return jsonify({'ret': 'success', 'list': all_epg_channels[:50]})
+
+                filtered = []
+                for item in all_epg_channels:
+                    c_id = str(item.get('id') or '').lower()
+                    c_name = str(item.get('name') or '').lower()
+                    c_display = [str(x).lower() for x in item.get('display_names', [])]
+                    
+                    match = False
+                    if keyword in c_id or keyword in c_name:
+                        match = True
+                    else:
+                        for disp in c_display:
+                            if keyword in disp:
+                                match = True
+                                break
+                    if match:
+                        filtered.append(item)
+                return jsonify({'ret': 'success', 'list': filtered})
+
+            elif sub == 'epg_save_override':
+                channel_uuid = str(request.form.get('channel_uuid') or '').strip()
+                epg_id = str(request.form.get('epg_id') or '').strip()
+                epg_name = str(request.form.get('epg_name') or '').strip()
+                
+                if not channel_uuid:
+                    return jsonify({'ret': 'warning', 'msg': '채널 UUID가 누락되었습니다.'})
+                
+                try:
+                    if not epg_id:
+                        ModelEPGOverride.delete(channel_uuid)
+                        msg = '수동 매칭을 초기화(자동 매칭으로 전환)했습니다.'
+                    else:
+                        ModelEPGOverride.save(channel_uuid, epg_id, epg_name)
+                        msg = f'[{epg_name}] 채널로 수동 매칭을 저장했습니다.'
+                    
+                    xml_path = _epg_cache_xml_path()
+                    if os.path.exists(xml_path):
+                        _build_epg_tvh_cache(xml_path)
+                    
+                    return jsonify({'ret': 'success', 'msg': msg})
+                except Exception as e:
+                    logger.exception(f'[ff_tvh_m3u] epg_save_override failed: {str(e)}')
+                    return jsonify({'ret': 'danger', 'msg': f'수동 매칭 처리 중 오류 발생: {str(e)}'})
 
             elif sub == 'epg_fetch':
                 _save_runtime_settings(req)

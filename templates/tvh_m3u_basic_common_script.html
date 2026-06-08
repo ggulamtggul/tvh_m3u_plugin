@@ -1060,4 +1060,284 @@ $("body").on('click', '#test_play_login_btn', function(e){
 
 /* PLAY PROFILE PATCH END */
 
+
+/* EPG MANUAL MAPPING PATCH START */
+var epgMatchingData = [];
+
+function loadEPGMatchingList() {
+  var $tbody = $('#epg_matching_tbody');
+  if ($tbody.length === 0) return;
+
+  $tbody.html('<tr><td colspan="6" class="text-center"><span class="spinner-border spinner-border-sm mr-2"></span>불러오는 중...</td></tr>');
+  
+  $.ajax({
+    url: '/' + package_name + '/ajax/' + ajax_sub + '/epg_matching_list',
+    type: 'POST',
+    cache: false,
+    dataType: 'json',
+    success: function(ret) {
+      if (ret.ret === 'success') {
+        epgMatchingData = ret.list || [];
+        var filterText = $.trim($('#matching_list_search').val() || '');
+        renderEPGMatchingTable(filterText);
+      } else {
+        $tbody.html('<tr><td colspan="6" class="text-center text-danger">데이터 로드 실패: ' + escapeHtml(ret.msg) + '</td></tr>');
+      }
+    },
+    error: function() {
+      $tbody.html('<tr><td colspan="6" class="text-center text-danger">데이터 로드 중 네트워크 오류 발생</td></tr>');
+    }
+  });
+}
+
+function renderEPGMatchingTable(filterText) {
+  var $tbody = $('#epg_matching_tbody');
+  if ($tbody.length === 0) return;
+
+  $tbody.empty();
+  var query = String(filterText || '').trim().toLowerCase();
+  
+  var filtered = epgMatchingData;
+  if (query) {
+    filtered = epgMatchingData.filter(function(item){
+      var name = String(item.channel_name || '').toLowerCase();
+      var group = String(item.group_name || '').toLowerCase();
+      return name.indexOf(query) !== -1 || group.indexOf(query) !== -1;
+    });
+  }
+
+  if (filtered.length === 0) {
+    $tbody.append('<tr><td colspan="6" class="text-center text-muted">일치하는 채널이 없습니다.</td></tr>');
+    return;
+  }
+
+  filtered.forEach(function(item){
+    var ruleText = '';
+    var ruleClass = 'secondary';
+    if (item.match_rule === 'manual') {
+      ruleText = '수동';
+      ruleClass = 'success';
+    } else if (item.match_rule === 'exact') {
+      ruleText = '자동 (정확)';
+      ruleClass = 'primary';
+    } else if (item.match_rule === 'contains') {
+      ruleText = '자동 (유사)';
+      ruleClass = 'info';
+    } else {
+      ruleText = item.matched ? '자동 (' + item.match_rule + ')' : '미매칭';
+      ruleClass = item.matched ? 'secondary' : 'warning';
+    }
+
+    var badge = '<span class="badge badge-' + ruleClass + '">' + ruleText + '</span>';
+    
+    var btnResetHtml = '';
+    if (item.is_manual) {
+      btnResetHtml = '<button type="button" class="btn btn-xs btn-outline-danger btn-epg-auto-reset mr-1" data-uuid="' + escapeHtml(item.channel_uuid) + '" data-name="' + escapeHtml(item.channel_name) + '">자동전환</button>';
+    }
+
+    var actionButtons = '<div style="text-align: center;">' +
+      btnResetHtml +
+      '<button type="button" class="btn btn-xs btn-primary btn-epg-manual-setup" data-uuid="' + escapeHtml(item.channel_uuid) + '" data-name="' + escapeHtml(item.channel_name) + '">수동설정</button>' +
+      '</div>';
+
+    var row = '<tr>' +
+      '<td>' + escapeHtml(item.group_name || '') + '</td>' +
+      '<td><strong>' + escapeHtml(item.channel_name || '') + '</strong></td>' +
+      '<td style="text-align: center;">' + badge + '</td>' +
+      '<td><code>' + escapeHtml(item.matched_epg_id || '') + '</code></td>' +
+      '<td>' + escapeHtml(item.matched_epg_name || '') + '</td>' +
+      '<td>' + actionButtons + '</td>' +
+      '</tr>';
+    $tbody.append(row);
+  });
+}
+
+function searchEPGXmlChannels(keyword) {
+  var $tbody = $('#modal_epg_result_tbody');
+  $tbody.html('<tr><td colspan="4" class="text-center"><span class="spinner-border spinner-border-sm mr-2"></span>검색 중...</td></tr>');
+
+  $.ajax({
+    url: '/' + package_name + '/ajax/' + ajax_sub + '/epg_xml_channels',
+    type: 'POST',
+    cache: false,
+    data: { keyword: keyword },
+    dataType: 'json',
+    success: function(ret) {
+      $tbody.empty();
+      if (ret.ret === 'success') {
+        var list = ret.list || [];
+        if (list.length === 0) {
+          $tbody.append('<tr><td colspan="4" class="text-center text-muted">일치하는 EPG 채널이 없습니다.</td></tr>');
+          return;
+        }
+        list.forEach(function(item){
+          var dispNames = (item.display_names || []).join(', ');
+          var btnSelect = '<button type="button" class="btn btn-xs btn-outline-primary btn-modal-select-epg" data-id="' + escapeHtml(item.id) + '" data-name="' + escapeHtml(item.name) + '">선택</button>';
+          var row = '<tr>' +
+            '<td style="text-align: center;">' + btnSelect + '</td>' +
+            '<td><code>' + escapeHtml(item.id) + '</code></td>' +
+            '<td><strong>' + escapeHtml(item.name) + '</strong> <small class="text-muted">(' + escapeHtml(dispNames) + ')</small></td>' +
+            '<td>' + escapeHtml(item.provider_label || item.provider || '-') + '</td>' +
+            '</tr>';
+          $tbody.append(row);
+        });
+      } else {
+        $tbody.append('<tr><td colspan="4" class="text-center text-danger">검색 에러: ' + escapeHtml(ret.msg) + '</td></tr>');
+      }
+    },
+    error: function() {
+      $tbody.html('<tr><td colspan="4" class="text-center text-danger">EPG 채널 검색 중 네트워크 오류 발생</td></tr>');
+    }
+  });
+}
+
+// Event Bindings
+$(document).ready(function(){
+  if (page_sub === 'epg') {
+    loadEPGMatchingList();
+  }
+});
+
+$("body").on('click', '#btn_refresh_matching_list', function(e){
+  e.preventDefault();
+  loadEPGMatchingList();
+});
+
+$("body").on('input keyup', '#matching_list_search', function(e){
+  var val = $(this).val();
+  renderEPGMatchingTable(val);
+});
+
+$("body").on('click', '#btn_clear_matching_search', function(e){
+  e.preventDefault();
+  $('#matching_list_search').val('');
+  renderEPGMatchingTable('');
+});
+
+$("body").on('click', '.btn-epg-manual-setup', function(e){
+  e.preventDefault();
+  var $btn = $(this);
+  var uuid = $btn.data('uuid');
+  var name = $btn.data('name');
+
+  $('#modal_channel_uuid').val(uuid);
+  $('#modal_channel_name_text').text(name);
+  $('#modal_epg_search_keyword').val(name);
+  $('#modal_direct_epg_id').val('');
+  $('#modal_direct_epg_name').val('');
+  $('#modal_epg_result_tbody').html('<tr><td colspan="4" class="text-center text-muted">검색 버튼을 눌러 채널을 조회하세요.</td></tr>');
+
+  $('#epg_manual_modal').modal('show');
+  
+  searchEPGXmlChannels(name);
+});
+
+$("body").on('click', '#btn_modal_epg_search', function(e){
+  e.preventDefault();
+  var keyword = $.trim($('#modal_epg_search_keyword').val() || '');
+  searchEPGXmlChannels(keyword);
+});
+
+$("body").on('keypress', '#modal_epg_search_keyword', function(e){
+  if (e.which === 13) {
+    e.preventDefault();
+    $('#btn_modal_epg_search').click();
+  }
+});
+
+$("body").on('click', '.btn-modal-select-epg', function(e){
+  e.preventDefault();
+  var $btn = $(this);
+  var id = $btn.data('id');
+  var name = $btn.data('name');
+
+  $('#modal_direct_epg_id').val(id);
+  $('#modal_direct_epg_name').val(name);
+  notify('EPG 채널 [' + name + ']이 선택되었습니다. 하단 저장 버튼을 클릭하세요.', 'info');
+});
+
+$("body").on('click', '#btn_modal_save_mapping', function(e){
+  e.preventDefault();
+  var $btn = $(this);
+  var uuid = $('#modal_channel_uuid').val();
+  var epgId = $.trim($('#modal_direct_epg_id').val() || '');
+  var epgName = $.trim($('#modal_direct_epg_name').val() || '');
+
+  if (!uuid) {
+    notify('선택된 채널이 없습니다.', 'warning');
+    return;
+  }
+  if (!epgId) {
+    notify('매핑할 EPG ID를 선택하거나 직접 입력하세요.', 'warning');
+    return;
+  }
+
+  setButtonLoading($btn, '저장중');
+
+  $.ajax({
+    url: '/' + package_name + '/ajax/' + ajax_sub + '/epg_save_override',
+    type: 'POST',
+    cache: false,
+    data: {
+      channel_uuid: uuid,
+      epg_id: epgId,
+      epg_name: epgName
+    },
+    dataType: 'json',
+    success: function(ret) {
+      if (ret.msg != null) notify(ret.msg, ret.ret);
+      if (ret.ret === 'success') {
+        $('#epg_manual_modal').modal('hide');
+        loadEPGMatchingList();
+        $('#epg_status_btn').click();
+      }
+    },
+    error: function() {
+      notify('수동 EPG 매칭 저장 실패', 'danger');
+    },
+    complete: function() {
+      clearButtonLoading($btn);
+    }
+  });
+});
+
+$("body").on('click', '.btn-epg-auto-reset', function(e){
+  e.preventDefault();
+  var $btn = $(this);
+  var uuid = $btn.data('uuid');
+  var name = $btn.data('name');
+
+  if (!confirm('현재 [' + name + '] 채널에 설정된 수동 EPG 매칭을 해제하고 자동 매칭으로 되돌릴까요?')) {
+    return;
+  }
+
+  setButtonLoading($btn, '초기화중');
+
+  $.ajax({
+    url: '/' + package_name + '/ajax/' + ajax_sub + '/epg_save_override',
+    type: 'POST',
+    cache: false,
+    data: {
+      channel_uuid: uuid,
+      epg_id: '',
+      epg_name: ''
+    },
+    dataType: 'json',
+    success: function(ret) {
+      if (ret.msg != null) notify(ret.msg, ret.ret);
+      if (ret.ret === 'success') {
+        loadEPGMatchingList();
+        $('#epg_status_btn').click();
+      }
+    },
+    error: function() {
+      notify('수동 EPG 매칭 해제 실패', 'danger');
+    },
+    complete: function() {
+      clearButtonLoading($btn);
+    }
+  });
+});
+/* EPG MANUAL MAPPING PATCH END */
+
 </script>

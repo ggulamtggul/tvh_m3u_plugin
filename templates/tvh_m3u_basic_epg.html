@@ -138,3 +138,113 @@
     </div>
   </div>
 </div>
+
+<!-- EPG 수동 매칭 관리 카드 -->
+<div class="card mb-4">
+  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+    <strong>채널별 EPG 수동 매칭 설정</strong>
+    <button type="button" class="btn btn-sm btn-outline-primary" id="btn_refresh_matching_list">목록 새로고침</button>
+  </div>
+  <div class="card-body">
+    <div class="ff-mini-note">동기화된 TVHeadend 채널들의 EPG 자동/수동 매칭 현황입니다. [수동 설정]을 통해 매핑이 틀린 채널을 바로잡을 수 있습니다.</div>
+    
+    <div class="row mt-3 mb-3">
+      <div class="col-sm-6">
+        <div class="input-group">
+          <input type="text" class="form-control" id="matching_list_search" placeholder="채널명 또는 그룹명 검색...">
+          <div class="input-group-append">
+            <button class="btn btn-outline-secondary" type="button" id="btn_clear_matching_search">초기화</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+      <table class="table table-sm table-bordered table-striped" style="font-size:13px;">
+        <thead>
+          <tr>
+            <th style="width: 120px;">그룹</th>
+            <th>TVH 채널명</th>
+            <th style="width: 100px;">매칭 방식</th>
+            <th>매칭 EPG ID</th>
+            <th>매칭 EPG 채널명</th>
+            <th style="width: 170px; text-align: center;">작업</th>
+          </tr>
+        </thead>
+        <tbody id="epg_matching_tbody">
+          <tr><td colspan="6" class="text-center text-muted">불러오는 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 수동 EPG 매칭 검색 모달 -->
+<div class="modal fade" id="epg_manual_modal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">EPG 채널 수동 매칭</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="modal_channel_uuid">
+        <div class="form-group">
+          <label style="font-weight:600;">대상 채널</label>
+          <div class="form-control-plaintext" id="modal_channel_name_text" style="font-size: 16px; font-weight: bold; color: #007bff; padding-top: 0;"></div>
+        </div>
+        
+        <div class="form-group mt-3">
+          <label style="font-weight:600;">EPG 채널 검색</label>
+          <div class="input-group">
+            <input type="text" class="form-control" id="modal_epg_search_keyword" placeholder="EPG 채널명 또는 ID 입력 (예: KBS, MBC, 영화)...">
+            <div class="input-group-append">
+              <button class="btn btn-primary" type="button" id="btn_modal_epg_search">검색</button>
+            </div>
+          </div>
+          <small class="form-text text-muted">유사한 채널명이 아래 검색 결과에 표시됩니다. (비어있으면 상위 50개 자동 노출)</small>
+        </div>
+
+        <div class="form-group mt-3">
+          <label style="font-weight:600;">검색 결과 선택</label>
+          <div style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 6px; background: #fafafa;">
+            <table class="table table-sm table-hover table-bordered mb-0" style="font-size:12px; background:#fff;">
+              <thead>
+                <tr>
+                  <th style="width: 50px; text-align: center;">선택</th>
+                  <th>EPG ID</th>
+                  <th>EPG 채널명</th>
+                  <th>제공사</th>
+                </tr>
+              </thead>
+              <tbody id="modal_epg_result_tbody">
+                <tr><td colspan="4" class="text- sz-center text-muted">검색어를 입력하고 [검색]을 클릭하세요.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <hr>
+
+        <div class="form-group mt-3">
+          <label style="font-weight:600;">직접 지정하기</label>
+          <div class="row">
+            <div class="col-sm-6 col-xs-12 mb-2">
+              <input type="text" class="form-control form-control-sm" id="modal_direct_epg_id" placeholder="정확한 EPG ID 입력 (예: KBS1)">
+            </div>
+            <div class="col-sm-6 col-xs-12 mb-2">
+              <input type="text" class="form-control form-control-sm" id="modal_direct_epg_name" placeholder="표시할 채널명 입력 (예: KBS 1TV)">
+            </div>
+          </div>
+          <small class="form-text text-muted">검색 결과에 없으나 XML 상의 정확한 EPG ID를 아는 경우 직접 입력할 수 있습니다.</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">닫기</button>
+        <button type="button" class="btn btn-primary" id="btn_modal_save_mapping">저장</button>
+      </div>
+    </div>
+  </div>
+</div>

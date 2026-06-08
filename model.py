@@ -136,8 +136,102 @@ def init_db():
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ff_tvh_m3u_epg_override (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel_uuid TEXT UNIQUE NOT NULL,
+        epg_id TEXT,
+        epg_name TEXT,
+        created_time TEXT,
+        updated_time TEXT
+    )
+    """)
+
     conn.commit()
     conn.close()
+
+
+class ModelEPGOverride:
+    def __init__(self, channel_uuid='', epg_id='', epg_name='', created_time=None, updated_time=None, id=None):
+        self.id = id
+        self.channel_uuid = channel_uuid
+        self.epg_id = epg_id
+        self.epg_name = epg_name
+        self.created_time = created_time
+        self.updated_time = updated_time
+
+    @staticmethod
+    def from_row(row):
+        return ModelEPGOverride(
+            id=row['id'],
+            channel_uuid=row['channel_uuid'],
+            epg_id=row['epg_id'],
+            epg_name=row['epg_name'],
+            created_time=row['created_time'],
+            updated_time=row['updated_time'],
+        )
+
+    @staticmethod
+    def get_all():
+        init_db()
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM ff_tvh_m3u_epg_override")
+        rows = [ModelEPGOverride.from_row(row) for row in cur.fetchall()]
+        conn.close()
+        return rows
+
+    @staticmethod
+    def get_map():
+        rows = ModelEPGOverride.get_all()
+        return {
+            row.channel_uuid: {
+                'epg_id': row.epg_id,
+                'epg_name': row.epg_name,
+            }
+            for row in rows
+        }
+
+    @staticmethod
+    def save(channel_uuid, epg_id, epg_name):
+        init_db()
+        channel_uuid = str(channel_uuid or '').strip()
+        epg_id = str(epg_id or '').strip()
+        epg_name = str(epg_name or '').strip()
+        if not channel_uuid:
+            return False
+        now = now_str()
+        conn = get_conn()
+        cur = conn.cursor()
+        row = cur.execute("SELECT id, created_time FROM ff_tvh_m3u_epg_override WHERE channel_uuid = ? LIMIT 1", (channel_uuid,)).fetchone()
+        if row:
+            created_time = row['created_time'] or now
+            cur.execute(
+                "UPDATE ff_tvh_m3u_epg_override SET epg_id=?, epg_name=?, updated_time=? WHERE channel_uuid=?",
+                (epg_id, epg_name, now, channel_uuid),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO ff_tvh_m3u_epg_override (channel_uuid, epg_id, epg_name, created_time, updated_time) VALUES (?, ?, ?, ?, ?)",
+                (channel_uuid, epg_id, epg_name, now, now),
+            )
+        conn.commit()
+        conn.close()
+        return True
+
+    @staticmethod
+    def delete(channel_uuid):
+        init_db()
+        channel_uuid = str(channel_uuid or '').strip()
+        if not channel_uuid:
+            return 0
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM ff_tvh_m3u_epg_override WHERE channel_uuid = ?", (channel_uuid,))
+        changed = cur.rowcount
+        conn.commit()
+        conn.close()
+        return changed
 
 
 class ModelLogoOverride:
