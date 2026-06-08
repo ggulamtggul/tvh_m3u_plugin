@@ -218,7 +218,7 @@ class TaskM3U(TaskBase):
         if TaskM3U.FF_URL_PLACEHOLDER in text:
             if base:
                 return text.replace(TaskM3U.FF_URL_PLACEHOLDER, base)
-            return text.replace(TaskM3U.FF_URL_PLACEHOLDER, '')
+            return text
         if text.startswith('//'):
             return text
         if text.startswith('http://') or text.startswith('https://'):
@@ -1599,6 +1599,10 @@ class TaskM3U(TaskBase):
             playlist_map = TaskM3U.fetch_playlist_map()
             playlist_map_count = len(playlist_map)
             base_url = TaskM3U._get_request_base_url()
+            if not base_url:
+                # Flask request context 밖에서 실행될 때 (스케줄러 등)
+                # 설정에서 호스트 주소를 가져오는 fallback 추가
+                base_url = TaskM3U._safe_model_setting_get('basic_server_url', '')
             logger.info(f'[ff_tvh_m3u] build_m3u playlist_map_count={playlist_map_count}')
 
             added_count = 0
