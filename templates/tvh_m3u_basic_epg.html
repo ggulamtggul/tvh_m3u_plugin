@@ -149,12 +149,23 @@
     <div class="ff-mini-note">동기화된 TVHeadend 채널들의 EPG 자동/수동 매칭 현황입니다. [수동 설정]을 통해 매핑이 틀린 채널을 바로잡을 수 있습니다.</div>
     
     <div class="row mt-3 mb-3">
-      <div class="col-sm-6">
+      <div class="col-sm-6 col-xs-12 mb-2">
         <div class="input-group">
           <input type="text" class="form-control" id="matching_list_search" placeholder="채널명 또는 그룹명 검색...">
           <div class="input-group-append">
             <button class="btn btn-outline-secondary" type="button" id="btn_clear_matching_search">초기화</button>
           </div>
+        </div>
+      </div>
+      <div class="col-sm-4 col-xs-12 mb-2">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-weight:600; font-size:13px; white-space:nowrap;">상태 필터:</span>
+          <select class="form-control form-control-sm" id="matching_list_filter">
+            <option value="all">전체 채널 보기</option>
+            <option value="manual">수동 매칭만 보기</option>
+            <option value="auto">자동 매칭만 보기</option>
+            <option value="unmatched">미매칭 채널만 보기</option>
+          </select>
         </div>
       </div>
     </div>

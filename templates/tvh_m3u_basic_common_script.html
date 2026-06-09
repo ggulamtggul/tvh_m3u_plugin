@@ -1096,10 +1096,27 @@ function renderEPGMatchingTable(filterText) {
 
   $tbody.empty();
   var query = String(filterText || '').trim().toLowerCase();
+  var statusFilter = $('#matching_list_filter').val() || 'all';
   
   var filtered = epgMatchingData;
+
+  // 1. Status Filtering
+  if (statusFilter !== 'all') {
+    filtered = filtered.filter(function(item){
+      if (statusFilter === 'manual') {
+        return item.match_rule === 'manual';
+      } else if (statusFilter === 'auto') {
+        return item.matched && item.match_rule !== 'manual';
+      } else if (statusFilter === 'unmatched') {
+        return !item.matched;
+      }
+      return true;
+    });
+  }
+
+  // 2. Search Text Filtering
   if (query) {
-    filtered = epgMatchingData.filter(function(item){
+    filtered = filtered.filter(function(item){
       var name = String(item.channel_name || '').toLowerCase();
       var group = String(item.group_name || '').toLowerCase();
       return name.indexOf(query) !== -1 || group.indexOf(query) !== -1;
@@ -1140,9 +1157,14 @@ function renderEPGMatchingTable(filterText) {
       '<button type="button" class="btn btn-xs btn-primary btn-epg-manual-setup" data-uuid="' + escapeHtml(item.channel_uuid) + '" data-name="' + escapeHtml(item.channel_name) + '">수동설정</button>' +
       '</div>';
 
+    var logoHtml = '';
+    if (item.matched_epg_icon) {
+      logoHtml = '<img src="' + escapeHtml(item.matched_epg_icon) + '" style="width:24px; height:24px; object-fit:contain; margin-right:8px; vertical-align:middle; border:1px solid #eee; padding:1px; border-radius:3px; background-color:#fff;" onerror="this.style.display=\'none\';">';
+    }
+
     var row = '<tr>' +
       '<td>' + escapeHtml(item.group_name || '') + '</td>' +
-      '<td><strong>' + escapeHtml(item.channel_name || '') + '</strong></td>' +
+      '<td>' + logoHtml + '<strong>' + escapeHtml(item.channel_name || '') + '</strong></td>' +
       '<td style="text-align: center;">' + badge + '</td>' +
       '<td><code>' + escapeHtml(item.matched_epg_id || '') + '</code></td>' +
       '<td>' + escapeHtml(item.matched_epg_name || '') + '</td>' +
@@ -1173,10 +1195,16 @@ function searchEPGXmlChannels(keyword) {
         list.forEach(function(item){
           var dispNames = (item.display_names || []).join(', ');
           var btnSelect = '<button type="button" class="btn btn-xs btn-outline-primary btn-modal-select-epg" data-id="' + escapeHtml(item.id) + '" data-name="' + escapeHtml(item.name) + '">선택</button>';
+          
+          var logoHtml = '';
+          if (item.icon_url) {
+            logoHtml = '<img src="' + escapeHtml(item.icon_url) + '" style="width:24px; height:24px; object-fit:contain; margin-right:8px; vertical-align:middle; border:1px solid #eee; padding:1px; border-radius:3px; background-color:#fff;" onerror="this.style.display=\'none\';">';
+          }
+
           var row = '<tr>' +
             '<td style="text-align: center;">' + btnSelect + '</td>' +
             '<td><code>' + escapeHtml(item.id) + '</code></td>' +
-            '<td><strong>' + escapeHtml(item.name) + '</strong> <small class="text-muted">(' + escapeHtml(dispNames) + ')</small></td>' +
+            '<td>' + logoHtml + '<strong>' + escapeHtml(item.name) + '</strong> <small class="text-muted">(' + escapeHtml(dispNames) + ')</small></td>' +
             '<td>' + escapeHtml(item.provider_label || item.provider || '-') + '</td>' +
             '</tr>';
           $tbody.append(row);
@@ -1212,6 +1240,11 @@ $("body").on('click', '#btn_clear_matching_search', function(e){
   e.preventDefault();
   $('#matching_list_search').val('');
   renderEPGMatchingTable('');
+});
+
+$("body").on('change', '#matching_list_filter', function(e){
+  var val = $('#matching_list_search').val();
+  renderEPGMatchingTable(val);
 });
 
 $("body").on('click', '.btn-epg-manual-setup', function(e){

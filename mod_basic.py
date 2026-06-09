@@ -1623,6 +1623,18 @@ class ModuleBasic(PluginModuleBase):
                 except Exception:
                     pass
 
+                epg_logo_map = {}
+                try:
+                    channels_json_path = os.path.join(_epg_cache_dir(), 'myepg_channels.json')
+                    if os.path.exists(channels_json_path):
+                        with open(channels_json_path, 'r', encoding='utf-8') as f:
+                            all_epg = json.load(f)
+                            for item in all_epg:
+                                if item.get('id') and item.get('icon_url'):
+                                    epg_logo_map[item['id']] = item['icon_url']
+                except Exception as e:
+                    logger.warning(f'[ff_tvh_m3u] load epg_logo_map failed: {str(e)}')
+
                 list_data = []
                 for ch in channels:
                     if not ch.enabled:
@@ -1631,6 +1643,9 @@ class ModuleBasic(PluginModuleBase):
                     override = override_map.get(uuid)
                     match_detail = match_info_map.get(uuid, {})
                     
+                    matched_epg_id = override.get('epg_id') if override else match_detail.get('source_channel_id', '')
+                    matched_epg_icon = epg_logo_map.get(matched_epg_id, '')
+
                     list_data.append({
                         'channel_uuid': uuid,
                         'channel_name': ch.name,
@@ -1639,8 +1654,9 @@ class ModuleBasic(PluginModuleBase):
                         'manual_epg_id': override.get('epg_id') if override else '',
                         'manual_epg_name': override.get('epg_name') if override else '',
                         'matched': match_detail.get('matched', False) if not override else True,
-                        'matched_epg_id': override.get('epg_id') if override else match_detail.get('source_channel_id', ''),
+                        'matched_epg_id': matched_epg_id,
                         'matched_epg_name': override.get('epg_name') if override else (match_detail.get('source_display_names')[0] if match_detail.get('source_display_names') else ''),
+                        'matched_epg_icon': matched_epg_icon,
                         'match_rule': 'manual' if override else match_detail.get('match_rule', ''),
                     })
                 return jsonify({'ret': 'success', 'list': list_data})
