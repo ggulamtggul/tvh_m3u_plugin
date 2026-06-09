@@ -462,17 +462,9 @@ def _update_epg_channel_icon(channel_elem, base_url=''):
 
     try:
         if str(P.ModelSetting.get('basic_epg_logo_normalize') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']:
-            from urllib.parse import quote
-            proxy_prefix = "/api/logo?url="
-            if proxy_prefix not in final_logo_url:
-                relative_url = f"/{P.package_name}/api/logo?url={quote(final_logo_url)}"
-                apikey_url = ToolUtil.make_apikey_url(relative_url)
-                if apikey_url.startswith('http'):
-                    final_logo_url = apikey_url
-                else:
-                    final_logo_url = f"{base_url.rstrip('/')}/{apikey_url.lstrip('/')}"
+            final_logo_url = _normalize_logo_and_get_static_url(final_logo_url, base_url)
     except Exception as e:
-        logger.warning(f'[ff_tvh_m3u] apply logo normalize prefix failed: {str(e)}')
+        logger.warning(f'[ff_tvh_m3u] apply logo normalize failed: {str(e)}')
 
     if icon_elem is None:
         icon_elem = ET.SubElement(channel_elem, 'icon')
@@ -1899,17 +1891,6 @@ class ModuleBasic(PluginModuleBase):
             elif sub == 'custom_logo_mirror':
                 return jsonify(handle_custom_logo_mirror(req))
 
-            elif sub == 'logo':
-                url = request.args.get('url', '')
-                if not url:
-                    return Response('url parameter required', status=400, mimetype='text/plain')
-                normalized_file = _get_normalized_logo_file(url)
-                if normalized_file and os.path.exists(normalized_file):
-                    with open(normalized_file, 'rb') as f:
-                        data = f.read()
-                    return Response(data, mimetype='image/png')
-                return redirect(url)
-
             elif sub == 'epg_raw':
                 xml_path = _epg_cache_xml_path()
                 if not os.path.exists(xml_path):
@@ -1961,29 +1942,29 @@ class ModuleBasic(PluginModuleBase):
             return jsonify({'ret': 'danger', 'msg': str(e)})
 
 
-def _get_normalized_logo_file(url):
+def _normalize_logo_and_get_static_url(url, base_url):
     try:
         import hashlib
         import requests
+        from PIL import Image
+        from io import BytesIO
         
         h = hashlib.md5(url.encode('utf-8')).hexdigest()
-        cache_dir = os.path.join(_epg_cache_dir(), 'normalized_logo')
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir)
-        
+        static_dir = '/data/plugins/tvh_m3u_plugin/docs/assets/normalized_logo'
+        if not os.path.exists(static_dir):
+            os.makedirs(static_dir, exist_ok=True)
+            
         filename = f"logo_{h}.png"
-        dest_path = os.path.join(cache_dir, filename)
+        dest_path = os.path.join(static_dir, filename)
+        web_url = f"{base_url.rstrip('/')}/customlogo/normalized_logo/{filename}"
         
         if os.path.exists(dest_path):
-            return dest_path
+            return web_url
             
         res = requests.get(url, timeout=5)
         if res.status_code != 200:
-            return None
+            return url
             
-        from io import BytesIO
-        from PIL import Image
-        
         im = Image.open(BytesIO(res.content))
         im = im.convert("RGBA")
         
@@ -1995,12 +1976,11 @@ def _get_normalized_logo_file(url):
         new_im.paste(im, offset, im)
         
         new_im.save(dest_path, "PNG")
-        return dest_path
+        return web_url
         
     except Exception as e:
-        # Avoid logger name error if logger is not defined, fall back to print
         try:
-            logger.warning(f'[ff_tvh_m3u] Logo normalization failed for {url}: {str(e)}')
+            logger.warning(f'[ff_tvh_m3u] Static logo normalization failed for {url}: {str(e)}')
         except NameError:
-            print(f'[ff_tvh_m3u] Logo normalization failed for {url}: {str(e)}')
-        return None
+            print(f'[ff_tvh_m3u] Static logo normalization failed for {url}: {str(e)}')
+        return url
