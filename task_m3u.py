@@ -1099,8 +1099,10 @@ class TaskM3U(TaskBase):
             'provider_id_map': {},
         }
 
+        # Always load the remote base logo cache first so we don't lose standard logos
+        TaskM3U._load_remote_logo_cache(new_cache)
+
         if not os.path.exists(TaskM3U.WRITE_DB_PATH):
-            TaskM3U._load_remote_logo_cache(new_cache)
             TaskM3U._logo_cache = new_cache
             return new_cache
 
