@@ -460,6 +460,15 @@ def _update_epg_channel_icon(channel_elem, base_url=''):
     if not final_logo_url:
         return
 
+    try:
+        if str(P.ModelSetting.get('basic_epg_logo_normalize') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']:
+            from urllib.parse import quote
+            proxy_prefix = "/api/logo?url="
+            if proxy_prefix not in final_logo_url:
+                final_logo_url = f"{base_url.rstrip('/')}/{P.package_name}/api/logo?url={quote(final_logo_url)}"
+    except Exception as e:
+        logger.warning(f'[ff_tvh_m3u] apply logo normalize prefix failed: {str(e)}')
+
     if icon_elem is None:
         icon_elem = ET.SubElement(channel_elem, 'icon')
     icon_elem.set('src', final_logo_url)
@@ -1400,6 +1409,7 @@ class ModuleBasic(PluginModuleBase):
         'basic_custom_logo_mirror_url': 'https://ff.aha3011.mywire.org/tvh_m3u_plugin/normal/custom_logo_mirror',
         'basic_custom_logo_mirror_token': '',
         'basic_logo_priority': 'custom,kt,wavve,tving,sk',
+        'basic_epg_logo_normalize': 'False',
     }
 
     def __init__(self, P):
@@ -1478,6 +1488,11 @@ class ModuleBasic(PluginModuleBase):
                 else 'False'
             )
             arg['basic_epg_dlive_channel_name'] = P.ModelSetting.get('basic_epg_dlive_channel_name') or '지역채널'
+            arg['basic_epg_logo_normalize'] = (
+                'True'
+                if str(P.ModelSetting.get('basic_epg_logo_normalize') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+                else 'False'
+            )
             arg['basic_epg_dlive_channel_id'] = P.ModelSetting.get('basic_epg_dlive_channel_id') or 'DLIVE_SONGPA'
             arg['basic_epg_dlive_schedule_url'] = P.ModelSetting.get('basic_epg_dlive_schedule_url') or DEFAULT_DLIVE_SCHEDULE_URL
             epg_provider_state = _build_epg_provider_rows(
@@ -1879,6 +1894,17 @@ class ModuleBasic(PluginModuleBase):
             elif sub == 'custom_logo_mirror':
                 return jsonify(handle_custom_logo_mirror(req))
 
+            elif sub == 'logo':
+                url = request.args.get('url', '')
+                if not url:
+                    return Response('url parameter required', status=400, mimetype='text/plain')
+                normalized_file = _get_normalized_logo_file(url)
+                if normalized_file and os.path.exists(normalized_file):
+                    with open(normalized_file, 'rb') as f:
+                        data = f.read()
+                    return Response(data, mimetype='image/png')
+                return redirect(url)
+
             elif sub == 'epg_raw':
                 xml_path = _epg_cache_xml_path()
                 if not os.path.exists(xml_path):
@@ -1928,3 +1954,48 @@ class ModuleBasic(PluginModuleBase):
         except Exception as e:
             logger.exception(f'[ff_tvh_m3u] process_api exception: {str(e)}')
             return jsonify({'ret': 'danger', 'msg': str(e)})
+
+
+def _get_normalized_logo_file(url):
+    try:
+        import hashlib
+        import requests
+        
+        h = hashlib.md5(url.encode('utf-8')).hexdigest()
+        cache_dir = os.path.join(_epg_cache_dir(), 'normalized_logo')
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+        
+        filename = f"logo_{h}.png"
+        dest_path = os.path.join(cache_dir, filename)
+        
+        if os.path.exists(dest_path):
+            return dest_path
+            
+        res = requests.get(url, timeout=5)
+        if res.status_code != 200:
+            return None
+            
+        from io import BytesIO
+        from PIL import Image
+        
+        im = Image.open(BytesIO(res.content))
+        im = im.convert("RGBA")
+        
+        max_size = (240, 240)
+        im.thumbnail(max_size, Image.Resampling.LANCZOS)
+        
+        new_im = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        offset = ((256 - im.width) // 2, (256 - im.height) // 2)
+        new_im.paste(im, offset, im)
+        
+        new_im.save(dest_path, "PNG")
+        return dest_path
+        
+    except Exception as e:
+        # Avoid logger name error if logger is not defined, fall back to print
+        try:
+            logger.warning(f'[ff_tvh_m3u] Logo normalization failed for {url}: {str(e)}')
+        except NameError:
+            print(f'[ff_tvh_m3u] Logo normalization failed for {url}: {str(e)}')
+        return None
