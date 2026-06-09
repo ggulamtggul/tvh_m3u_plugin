@@ -467,7 +467,10 @@ def _update_epg_channel_icon(channel_elem, base_url=''):
             if proxy_prefix not in final_logo_url:
                 relative_url = f"/{P.package_name}/api/logo?url={quote(final_logo_url)}"
                 apikey_url = ToolUtil.make_apikey_url(relative_url)
-                final_logo_url = f"{base_url.rstrip('/')}{apikey_url}"
+                if apikey_url.startswith('http'):
+                    final_logo_url = apikey_url
+                else:
+                    final_logo_url = f"{base_url.rstrip('/')}/{apikey_url.lstrip('/')}"
     except Exception as e:
         logger.warning(f'[ff_tvh_m3u] apply logo normalize prefix failed: {str(e)}')
 
