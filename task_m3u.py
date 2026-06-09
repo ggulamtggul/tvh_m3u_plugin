@@ -234,19 +234,51 @@ class TaskM3U(TaskBase):
     def _get_request_base_url():
         try:
             from flask import request
-            return request.host_url.rstrip('/')
+            if request and getattr(request, 'host_url', None):
+                return request.host_url.rstrip('/')
         except Exception:
             pass
-        # Flask context 밖(스케줄러)일 때 EPG URL에서 추출
+
+        import sqlite3
+        for db_path, table_name in [
+            ('/data/db/system.db', 'system_setting'),
+            ('/data/db/sjva.db', 'sjva_setting'),
+            ('/data/db/flaskfarmaider.db', 'flaskfarmaider_setting'),
+        ]:
+            try:
+                if os.path.exists(db_path):
+                    con = sqlite3.connect(db_path)
+                    row = con.execute(f"SELECT value FROM {table_name} WHERE key='ddns' LIMIT 1").fetchone()
+                    if not row or not row[0]:
+                        row = con.execute(f"SELECT value FROM {table_name} WHERE key='sjva_url' LIMIT 1").fetchone()
+                    con.close()
+                    if row and row[0]:
+                        val = str(row[0]).strip().rstrip('/')
+                        if val.startswith('http://') or val.startswith('https://'):
+                            return val
+            except Exception:
+                pass
+
+        try:
+            from system.model import ModelSetting as SystemModelSetting
+            val = SystemModelSetting.get('ddns') or SystemModelSetting.get('sjva_url')
+            if val:
+                val = str(val).strip().rstrip('/')
+                if val.startswith('http://') or val.startswith('https://'):
+                    return val
+        except Exception:
+            pass
+
         try:
             from urllib.parse import urlsplit
-            epg_url = str(P.ModelSetting.get('basic_epg_url') or '').strip()
+            epg_url = str(P.ModelSetting.get('basic_epg_xml_url') or '').strip()
             if epg_url:
                 parts = urlsplit(epg_url)
                 if parts.scheme and parts.netloc:
                     return f'{parts.scheme}://{parts.netloc}'
         except Exception:
             pass
+
         return ''
 
     @staticmethod

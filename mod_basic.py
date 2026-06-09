@@ -533,22 +533,10 @@ def _build_epg_tvh_cache(xml_path=None):
         return values
 
     base_url = ''
-    base_url = ''
     try:
         base_url = Task._get_request_base_url()
     except Exception:
         base_url = ''
-    
-    if not base_url:
-        try:
-            from urllib.parse import urlsplit
-            epg_url = str(P.ModelSetting.get('basic_epg_url') or '').strip()
-            if epg_url:
-                parts = urlsplit(epg_url)
-                if parts.scheme and parts.netloc:
-                    base_url = f'{parts.scheme}://{parts.netloc}'
-        except Exception:
-            pass
 
     root_tag = 'tv'
     root_attrs = {}
