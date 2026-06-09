@@ -1,6 +1,9 @@
 <div class="card mb-4">
-  <div class="card-header"><strong>EPG 우선순위</strong></div>
-  <div class="card-body">
+  <div class="card-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="$('#epg_priority_card_body').slideToggle(); $('#epg_priority_toggle_icon').text($('#epg_priority_toggle_icon').text() === '▼' ? '▲' : '▼');">
+    <strong>EPG 우선순위 설정</strong>
+    <span id="epg_priority_toggle_icon" style="font-size: 12px; color: #888;">▼</span>
+  </div>
+  <div class="card-body" id="epg_priority_card_body" style="display: none;">
     <div class="ff-mini-note">통합 EPG 또는 EPG별 크롤링 결과를 사용할 때, 사용자가 우선순위와 사용 여부를 버튼으로 정하는 영역입니다. EPG 내용이 한 개 업체만 들어 있어도 그대로 진행 가능하도록 막지 않습니다.</div>
 
     <input type="hidden" id="basic_epg_provider_priority" name="basic_epg_provider_priority" value="{{ arg.get('basic_epg_provider_priority', '') }}">
@@ -105,11 +108,14 @@
 </div>
 
 <div class="card mb-4">
-  <div class="card-header"><strong>전체 채널 미리보기</strong></div>
-  <div class="card-body">
-    <div class="ff-mini-note">채널별 EPG id 연결 구조 설계 전에, 원본 XML에서 읽힌 전체 channel id / 대표명 / EPG / 로고 존재 여부를 확인하는 영역입니다.</div>
-    <div class="table-responsive mt-3">
-      <table class="table table-sm table-bordered">
+  <div class="card-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="$('#epg_sample_card_body').slideToggle(); $('#epg_sample_toggle_icon').text($('#epg_sample_toggle_icon').text() === '▼' ? '▲' : '▼');">
+    <strong>전체 채널 미리보기 (디버깅용)</strong>
+    <span id="epg_sample_toggle_icon" style="font-size: 12px; color: #888;">▼</span>
+  </div>
+  <div class="card-body" id="epg_sample_card_body" style="display: none;">
+    <div class="ff-mini-note">채널별 EPG id 연결 구조 설계 전에, 원본 XML에서 읽힌 전체 channel id / 대표명 / EPG / 로고 존재 여부를 확인하는 영역입니다. (상위 50개 샘플)</div>
+    <div class="table-responsive mt-3" style="max-height: 250px; overflow-y: auto;">
+      <table class="table table-sm table-bordered" style="font-size: 13px;">
         <thead>
           <tr>
             <th>EPG Channel ID</th>
