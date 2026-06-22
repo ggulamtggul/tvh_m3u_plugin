@@ -716,29 +716,34 @@ def _build_epg_tvh_cache(xml_path=None):
             
         keep_original = str(P.ModelSetting.get('basic_epg_keep_original_display_names') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
         
+        existing_names = []
         if keep_original:
-            existing_names = []
             for child in list(channel_elem):
                 if _safe_tag_name(child.tag) == 'display-name':
                     name_text = str(child.text or '').strip()
                     if name_text and name_text not in existing_names and name_text not in new_displays:
                         existing_names.append(name_text)
             
-            for child in list(channel_elem):
-                if _safe_tag_name(child.tag) == 'display-name':
-                    channel_elem.remove(child)
-                    
-            for name in new_displays + existing_names:
-                node = ET.SubElement(channel_elem, 'display-name')
-                node.text = name
-        else:
-            for child in list(channel_elem):
-                if _safe_tag_name(child.tag) == 'display-name':
-                    channel_elem.remove(child)
-            for name in new_displays:
-                node = ET.SubElement(channel_elem, 'display-name')
-                node.text = name
+        # Separate existing icon nodes and remove all display-name / icon nodes first
+        existing_icons = []
+        for child in list(channel_elem):
+            tag = _safe_tag_name(child.tag)
+            if tag == 'display-name':
+                channel_elem.remove(child)
+            elif tag == 'icon':
+                existing_icons.append(child)
+                channel_elem.remove(child)
+                
+        # 1. Append display-names first (so they conform to XMLTV DTD: display-name -> icon)
+        for name in new_displays + existing_names:
+            node = ET.SubElement(channel_elem, 'display-name')
+            node.text = name
+            
+        # 2. Append icon nodes back
+        for icon in existing_icons:
+            channel_elem.append(icon)
 
+        # 3. Update icon element URL and recreate icon node if it was missing
         _update_epg_channel_icon(channel_elem, base_url=base_url)
         selected_channels.append({
             'channel_uuid': channel_uuid,
