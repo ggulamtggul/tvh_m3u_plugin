@@ -435,7 +435,7 @@ def _xml_start_tag(name, attrs):
     return ''.join(pieces)
 
 
-def _update_epg_channel_icon(channel_elem, base_url=''):
+def _update_epg_channel_icon(channel_elem, base_url='', channel_name=''):
     display_names = []
     icon_elem = None
     current_icon_url = ''
@@ -450,7 +450,8 @@ def _update_epg_channel_icon(channel_elem, base_url=''):
             icon_elem = child
             current_icon_url = str(child.attrib.get('src') or '').strip()
 
-    channel_name = display_names[0] if display_names else str(channel_elem.attrib.get('id') or '').strip()
+    if not channel_name:
+        channel_name = display_names[0] if display_names else str(channel_elem.attrib.get('id') or '').strip()
     final_logo_url = Task.get_effective_logo_url(
         channel_name=channel_name,
         sheet_logo_url=current_icon_url,
@@ -744,7 +745,7 @@ def _build_epg_tvh_cache(xml_path=None):
             channel_elem.append(icon)
 
         # 3. Update icon element URL and recreate icon node if it was missing
-        _update_epg_channel_icon(channel_elem, base_url=base_url)
+        _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name)
         selected_channels.append({
             'channel_uuid': channel_uuid,
             'source_channel_id': selected.get('channel_id'),
