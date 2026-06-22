@@ -74,6 +74,18 @@
     </div>
 
     <div class="form-group row">
+      <label class="col-sm-3 col-form-label">EPG 원본 명칭 유지</label>
+      <div class="col-sm-9">
+        <label style="display:flex; align-items:center; gap:8px; margin-top:7px;">
+          <input type="checkbox" id="basic_epg_keep_original_display_names" name="basic_epg_keep_original_display_names" value="True" {% if arg.get('basic_epg_keep_original_display_names') == 'True' %}checked{% endif %}>
+          <span>사용 (EPG 원본의 서브 별칭 및 채널 번호들 유지)</span>
+        </label>
+        <input type="hidden" name="basic_epg_keep_original_display_names" value="False">
+        <small class="form-text text-muted">체크를 해제하면 EPG XML 내의 지저분한 서브 명칭들을 모두 제거하고, 사용자가 지정한 깔끔한 TVH 채널명 단 하나만 EPG XML에 남깁니다.</small>
+      </div>
+    </div>
+
+    <div class="form-group row">
       <label class="col-sm-3 col-form-label">EPG 자동 갱신 사용</label>
       <div class="col-sm-9">
         <label style="display:flex; align-items:center; gap:8px; margin-top:7px;">

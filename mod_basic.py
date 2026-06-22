@@ -704,14 +704,24 @@ def _build_epg_tvh_cache(xml_path=None):
             continue
 
         channel_elem.set('id', channel_uuid)
-        first_display = None
-        for child in list(channel_elem):
-            if _safe_tag_name(child.tag) == 'display-name':
-                first_display = child
-                break
-        if first_display is None:
-            first_display = ET.SubElement(channel_elem, 'display-name')
-        first_display.text = channel_name
+        keep_original = str(P.ModelSetting.get('basic_epg_keep_original_display_names') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+        
+        if keep_original:
+            first_display = None
+            for child in list(channel_elem):
+                if _safe_tag_name(child.tag) == 'display-name':
+                    first_display = child
+                    break
+            if first_display is None:
+                first_display = ET.SubElement(channel_elem, 'display-name')
+            first_display.text = channel_name
+        else:
+            # Remove all existing display-names and recreate only one with target channel_name
+            for child in list(channel_elem):
+                if _safe_tag_name(child.tag) == 'display-name':
+                    channel_elem.remove(child)
+            new_display = ET.SubElement(channel_elem, 'display-name')
+            new_display.text = channel_name
 
         _update_epg_channel_icon(channel_elem, base_url=base_url)
         selected_channels.append({
@@ -1407,6 +1417,7 @@ class ModuleBasic(PluginModuleBase):
         'basic_custom_logo_mirror_token': '',
         'basic_logo_priority': 'custom,kt,wavve,tving,sk',
         'basic_epg_logo_normalize': 'False',
+        'basic_epg_keep_original_display_names': 'True',
     }
 
     def __init__(self, P):
@@ -1488,6 +1499,11 @@ class ModuleBasic(PluginModuleBase):
             arg['basic_epg_logo_normalize'] = (
                 'True'
                 if str(P.ModelSetting.get('basic_epg_logo_normalize') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+                else 'False'
+            )
+            arg['basic_epg_keep_original_display_names'] = (
+                'True'
+                if str(P.ModelSetting.get('basic_epg_keep_original_display_names') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
                 else 'False'
             )
             arg['basic_epg_dlive_channel_id'] = P.ModelSetting.get('basic_epg_dlive_channel_id') or 'DLIVE_SONGPA'
