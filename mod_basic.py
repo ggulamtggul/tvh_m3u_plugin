@@ -459,6 +459,9 @@ def _update_epg_channel_icon(channel_elem, base_url='', channel_name=''):
         base_url=base_url,
     )
     if not final_logo_url:
+        final_logo_url = current_icon_url
+
+    if not final_logo_url:
         return
 
     try:
@@ -705,7 +708,10 @@ def _build_epg_tvh_cache(xml_path=None):
             continue
 
         channel_elem.set('id', channel_uuid)
-        ch_num = int(getattr(row, 'number', 0) or 0)
+        try:
+            ch_num = int(getattr(row, 'number', 0) or 0)
+        except (ValueError, TypeError):
+            ch_num = 0
         
         new_displays = []
         if ch_num > 0:
@@ -725,27 +731,28 @@ def _build_epg_tvh_cache(xml_path=None):
                     if name_text and name_text not in existing_names and name_text not in new_displays:
                         existing_names.append(name_text)
             
-        # Separate existing icon nodes and remove all display-name / icon nodes first
-        existing_icons = []
+        # 1. Remove display-names first while keeping icon elements untouched to preserve original icon URL
         for child in list(channel_elem):
-            tag = _safe_tag_name(child.tag)
-            if tag == 'display-name':
-                channel_elem.remove(child)
-            elif tag == 'icon':
-                existing_icons.append(child)
+            if _safe_tag_name(child.tag) == 'display-name':
                 channel_elem.remove(child)
                 
-        # 1. Append display-names first (so they conform to XMLTV DTD: display-name -> icon)
+        # 2. Append display-names first
         for name in new_displays + existing_names:
             node = ET.SubElement(channel_elem, 'display-name')
             node.text = name
-            
-        # 2. Append icon nodes back
+
+        # 3. Update icon element URL (will lookup with correct original channel_name and preserve fallback)
+        _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name)
+
+        # 4. Finally, conform to XMLTV DTD (display-name -> icon) by reordering icon elements to the end
+        existing_icons = []
+        for child in list(channel_elem):
+            if _safe_tag_name(child.tag) == 'icon':
+                existing_icons.append(child)
+                channel_elem.remove(child)
+                
         for icon in existing_icons:
             channel_elem.append(icon)
-
-        # 3. Update icon element URL and recreate icon node if it was missing
-        _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name)
         selected_channels.append({
             'channel_uuid': channel_uuid,
             'source_channel_id': selected.get('channel_id'),
