@@ -704,24 +704,40 @@ def _build_epg_tvh_cache(xml_path=None):
             continue
 
         channel_elem.set('id', channel_uuid)
+        ch_num = int(getattr(row, 'number', 0) or 0)
+        
+        new_displays = []
+        if ch_num > 0:
+            new_displays.append(f"{ch_num} {channel_name}")
+            new_displays.append(channel_name)
+            new_displays.append(str(ch_num))
+        else:
+            new_displays.append(channel_name)
+            
         keep_original = str(P.ModelSetting.get('basic_epg_keep_original_display_names') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
         
         if keep_original:
-            first_display = None
+            existing_names = []
             for child in list(channel_elem):
                 if _safe_tag_name(child.tag) == 'display-name':
-                    first_display = child
-                    break
-            if first_display is None:
-                first_display = ET.SubElement(channel_elem, 'display-name')
-            first_display.text = channel_name
-        else:
-            # Remove all existing display-names and recreate only one with target channel_name
+                    name_text = str(child.text or '').strip()
+                    if name_text and name_text not in existing_names and name_text not in new_displays:
+                        existing_names.append(name_text)
+            
             for child in list(channel_elem):
                 if _safe_tag_name(child.tag) == 'display-name':
                     channel_elem.remove(child)
-            new_display = ET.SubElement(channel_elem, 'display-name')
-            new_display.text = channel_name
+                    
+            for name in new_displays + existing_names:
+                node = ET.SubElement(channel_elem, 'display-name')
+                node.text = name
+        else:
+            for child in list(channel_elem):
+                if _safe_tag_name(child.tag) == 'display-name':
+                    channel_elem.remove(child)
+            for name in new_displays:
+                node = ET.SubElement(channel_elem, 'display-name')
+                node.text = name
 
         _update_epg_channel_icon(channel_elem, base_url=base_url)
         selected_channels.append({
