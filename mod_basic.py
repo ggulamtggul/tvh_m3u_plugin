@@ -332,7 +332,7 @@ def _epg_cache_dir():
         for old_path in old_paths:
             if not os.path.isdir(old_path):
                 continue
-            for name in ['myepg_raw.xml', 'myepg_raw.meta.json', 'myepg_tvh.xml', 'myepg_tvh.match.json', 'dlive_extra.xml']:
+            for name in ['myepg_raw.xml', 'myepg_raw.meta.json', 'myepg_tvh.xml', 'myepg_tivimate.xml', 'myepg_tvh.match.json', 'dlive_extra.xml']:
                 src = os.path.join(old_path, name)
                 dst = os.path.join(path, name)
                 if os.path.exists(src) and not os.path.exists(dst):
@@ -348,6 +348,10 @@ def _epg_cache_xml_path():
 
 def _epg_cache_tvh_xml_path():
     return os.path.join(_epg_cache_dir(), 'myepg_tvh.xml')
+
+
+def _epg_cache_tivimate_xml_path():
+    return os.path.join(_epg_cache_dir(), 'myepg_tivimate.xml')
 
 
 def _epg_cache_match_json_path():
@@ -475,19 +479,25 @@ def _update_epg_channel_icon(channel_elem, base_url='', channel_name=''):
     icon_elem.set('src', final_logo_url)
 
 
-def _build_epg_tvh_cache(xml_path=None):
+def _build_epg_cache(target, xml_path=None):
     raw_xml_path = xml_path or _epg_cache_xml_path()
     if not os.path.exists(raw_xml_path):
         return {
-            'tvh_cache_exists': False,
-            'tvh_file_size': 0,
-            'tvh_channel_count': 0,
-            'tvh_programme_count': 0,
+            'cache_exists': False,
+            'file_size': 0,
+            'channel_count': 0,
+            'programme_count': 0,
         }
 
     cache_dir = _epg_cache_dir()
-    tmp_path = os.path.join(cache_dir, 'myepg_tvh.tmp.xml')
-    final_path = _epg_cache_tvh_xml_path()
+    tmp_path = os.path.join(cache_dir, f'myepg_{target}.tmp.xml')
+    if target == 'tvh':
+        final_path = _epg_cache_tvh_xml_path()
+    elif target == 'tivimate':
+        final_path = _epg_cache_tivimate_xml_path()
+    else:
+        raise ValueError(f"Invalid target: {target}")
+
     enabled_set = _get_epg_enabled_provider_set()
     rank_map = _get_epg_provider_rank_map()
     provider_state = _get_epg_provider_state_from_settings()
@@ -505,7 +515,7 @@ def _build_epg_tvh_cache(xml_path=None):
     try:
         db_rules = Task.load_db_rules()
     except Exception as e:
-        logger.warning(f'[ff_tvh_m3u] load db rules for epg tvh cache failed: {str(e)}')
+        logger.warning(f'[ff_tvh_m3u] load db rules for epg {target} cache failed: {str(e)}')
 
     override_map = {}
     try:
@@ -628,7 +638,7 @@ def _build_epg_tvh_cache(xml_path=None):
                         for candidate_value in _iter_epg_match_values(display_name):
                             epg_key = _normalize_epg_match_name(candidate_value)
                             if len(epg_key) < 3:
-                                continue
+                                  continue
                             if search_key in epg_key or epg_key in search_key:
                                 return item, 'contains'
         return None, ''
@@ -712,9 +722,14 @@ def _build_epg_tvh_cache(xml_path=None):
             ch_num = int(getattr(row, 'number', 0) or 0)
         except (ValueError, TypeError):
             ch_num = 0
-        
-        insert_number = str(P.ModelSetting.get('basic_epg_insert_tvh_channel_number') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
-        
+
+        if target == 'tvh':
+            insert_number = str(P.ModelSetting.get('basic_epg_tvh_insert_number') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+            keep_original = str(P.ModelSetting.get('basic_epg_tvh_keep_original') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+        else:
+            insert_number = str(P.ModelSetting.get('basic_epg_tivimate_insert_number') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+            keep_original = str(P.ModelSetting.get('basic_epg_tivimate_keep_original') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+
         new_displays = []
         if insert_number and ch_num > 0:
             new_displays.append(f"{ch_num} {channel_name}")
@@ -722,9 +737,7 @@ def _build_epg_tvh_cache(xml_path=None):
             new_displays.append(str(ch_num))
         else:
             new_displays.append(channel_name)
-            
-        keep_original = str(P.ModelSetting.get('basic_epg_keep_original_display_names') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
-        
+
         existing_names = []
         if keep_original:
             for child in list(channel_elem):
@@ -732,27 +745,23 @@ def _build_epg_tvh_cache(xml_path=None):
                     name_text = str(child.text or '').strip()
                     if name_text and name_text not in existing_names and name_text not in new_displays:
                         existing_names.append(name_text)
-            
-        # 1. Remove display-names first while keeping icon elements untouched to preserve original icon URL
+
         for child in list(channel_elem):
             if _safe_tag_name(child.tag) == 'display-name':
                 channel_elem.remove(child)
-                
-        # 2. Append display-names first
+
         for name in new_displays + existing_names:
             node = ET.SubElement(channel_elem, 'display-name')
             node.text = name
 
-        # 3. Update icon element URL (will lookup with correct original channel_name and preserve fallback)
         _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name)
 
-        # 4. Finally, conform to XMLTV DTD (display-name -> icon) by reordering icon elements to the end
         existing_icons = []
         for child in list(channel_elem):
             if _safe_tag_name(child.tag) == 'icon':
                 existing_icons.append(child)
                 channel_elem.remove(child)
-                
+
         for icon in existing_icons:
             channel_elem.append(icon)
         selected_channels.append({
@@ -803,50 +812,58 @@ def _build_epg_tvh_cache(xml_path=None):
 
     os.replace(tmp_path, final_path)
     try:
-        with open(_epg_cache_match_json_path(), 'w', encoding='utf-8') as f:
-            json.dump({
-                'created_at': _epg_now(),
-                'matched_count': matched_count,
-                'unmatched_count': unmatched_count,
-                'provider_order': provider_order,
-                'provider_match_order': provider_match_order,
-                'rows': match_rows,
-            }, f, ensure_ascii=False, indent=2)
+        # match json remains shared or separate? We keep tvh as primary for match details
+        if target == 'tvh':
+            with open(_epg_cache_match_json_path(), 'w', encoding='utf-8') as f:
+                json.dump({
+                    'created_at': _epg_now(),
+                    'matched_count': matched_count,
+                    'unmatched_count': unmatched_count,
+                    'provider_order': provider_order,
+                    'provider_match_order': provider_match_order,
+                    'rows': match_rows,
+                }, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.warning(f'[ff_tvh_m3u] save epg tvh match json failed: {str(e)}')
+        logger.warning(f'[ff_tvh_m3u] save epg {target} match json failed: {str(e)}')
 
     file_size = os.path.getsize(final_path) if os.path.exists(final_path) else 0
     return {
-        'tvh_cache_exists': os.path.exists(final_path),
-        'tvh_cache_path': final_path,
-        'tvh_file_size': file_size,
-        'tvh_channel_count': channel_count,
-        'tvh_programme_count': programme_count,
-        'tvh_matched_channel_count': matched_count,
-        'tvh_unmatched_channel_count': unmatched_count,
-        'tvh_provider_enabled': provider_state.get('enabled_csv', ''),
-        'tvh_provider_priority': provider_state.get('priority_csv', ''),
+        'cache_exists': os.path.exists(final_path),
+        'cache_path': final_path,
+        'file_size': file_size,
+        'channel_count': channel_count,
+        'programme_count': programme_count,
+        'matched_channel_count': matched_count,
+        'unmatched_channel_count': unmatched_count,
+        'provider_enabled': provider_state.get('enabled_csv', ''),
+        'provider_priority': provider_state.get('priority_csv', ''),
     }
 
 
-def _epg_tvh_cache_needs_rebuild():
+def _epg_cache_needs_rebuild(target):
     raw_path = _epg_cache_xml_path()
-    tvh_path = _epg_cache_tvh_xml_path()
+    if target == 'tvh':
+        target_path = _epg_cache_tvh_xml_path()
+    elif target == 'tivimate':
+        target_path = _epg_cache_tivimate_xml_path()
+    else:
+        return False
+
     if not os.path.exists(raw_path):
         return False
-    if not os.path.exists(tvh_path):
+    if not os.path.exists(target_path):
         return True
     try:
-        if os.path.getmtime(raw_path) > os.path.getmtime(tvh_path):
+        if os.path.getmtime(raw_path) > os.path.getmtime(target_path):
             return True
     except Exception:
         return True
 
     meta = _load_epg_meta()
     provider_state = _get_epg_provider_state_from_settings()
-    if str(meta.get('tvh_provider_enabled') or '') != str(provider_state.get('enabled_csv') or ''):
+    if str(meta.get(f'{target}_provider_enabled') or '') != str(provider_state.get('enabled_csv') or ''):
         return True
-    if str(meta.get('tvh_provider_priority') or '') != str(provider_state.get('priority_csv') or ''):
+    if str(meta.get(f'{target}_provider_priority') or '') != str(provider_state.get('priority_csv') or ''):
         return True
     return False
 
@@ -1023,7 +1040,8 @@ def _fetch_epg_and_build_meta(url, verify_ssl=True):
     except Exception as e:
         logger.warning(f'[ff_tvh_m3u] save myepg_channels.json failed: {str(e)}')
 
-    tvh_summary = _build_epg_tvh_cache(xml_path)
+    tvh_summary = _build_epg_cache('tvh', xml_path)
+    tivimate_summary = _build_epg_cache('tivimate', xml_path)
     meta = {
         'ret': 'success',
         'fetched_at': _epg_now(),
@@ -1037,12 +1055,18 @@ def _fetch_epg_and_build_meta(url, verify_ssl=True):
         'detected_provider_keys': summary.get('detected_provider_keys', []),
         'provider_rows': summary.get('provider_rows', []),
         'provider_mode': summary.get('provider_mode', 'unknown'),
-        'tvh_cache_exists': tvh_summary.get('tvh_cache_exists', False),
-        'tvh_file_size': tvh_summary.get('tvh_file_size', 0),
-        'tvh_channel_count': tvh_summary.get('tvh_channel_count', 0),
-        'tvh_programme_count': tvh_summary.get('tvh_programme_count', 0),
-        'tvh_provider_enabled': tvh_summary.get('tvh_provider_enabled', ''),
-        'tvh_provider_priority': tvh_summary.get('tvh_provider_priority', ''),
+        'tvh_cache_exists': tvh_summary.get('cache_exists', False),
+        'tvh_file_size': tvh_summary.get('file_size', 0),
+        'tvh_channel_count': tvh_summary.get('channel_count', 0),
+        'tvh_programme_count': tvh_summary.get('programme_count', 0),
+        'tvh_provider_enabled': tvh_summary.get('provider_enabled', ''),
+        'tvh_provider_priority': tvh_summary.get('provider_priority', ''),
+        'tivimate_cache_exists': tivimate_summary.get('cache_exists', False),
+        'tivimate_file_size': tivimate_summary.get('file_size', 0),
+        'tivimate_channel_count': tivimate_summary.get('channel_count', 0),
+        'tivimate_programme_count': tivimate_summary.get('programme_count', 0),
+        'tivimate_provider_enabled': tivimate_summary.get('provider_enabled', ''),
+        'tivimate_provider_priority': tivimate_summary.get('provider_priority', ''),
         'dlive_enabled': _is_epg_dlive_enabled(),
     }
     _save_epg_meta(meta)
@@ -1055,10 +1079,13 @@ def _get_epg_status_payload():
     exists = os.path.exists(xml_path)
     tvh_xml_path = _epg_cache_tvh_xml_path()
     tvh_exists = os.path.exists(tvh_xml_path)
+    tivimate_xml_path = _epg_cache_tivimate_xml_path()
+    tivimate_exists = os.path.exists(tivimate_xml_path)
     payload = {
         'ret': 'success' if exists else 'warning',
         'cache_exists': exists,
         'tvh_cache_exists': tvh_exists,
+        'tivimate_cache_exists': tivimate_exists,
         'fetched_at': meta.get('fetched_at', ''),
         'source_url': meta.get('source_url', ''),
         'file_size': meta.get('file_size', 0),
@@ -1068,6 +1095,9 @@ def _get_epg_status_payload():
         'tvh_file_size': meta.get('tvh_file_size', os.path.getsize(tvh_xml_path) if tvh_exists else 0),
         'tvh_channel_count': meta.get('tvh_channel_count', 0),
         'tvh_programme_count': meta.get('tvh_programme_count', 0),
+        'tivimate_file_size': meta.get('tivimate_file_size', os.path.getsize(tivimate_xml_path) if tivimate_exists else 0),
+        'tivimate_channel_count': meta.get('tivimate_channel_count', 0),
+        'tivimate_programme_count': meta.get('tivimate_programme_count', 0),
         'sample_channels': meta.get('sample_channels', []),
         'detected_provider_keys': meta.get('detected_provider_keys', []),
         'provider_rows': meta.get('provider_rows', []),
@@ -1450,6 +1480,10 @@ class ModuleBasic(PluginModuleBase):
         'basic_epg_logo_normalize': 'False',
         'basic_epg_keep_original_display_names': 'True',
         'basic_epg_insert_tvh_channel_number': 'False',
+        'basic_epg_tvh_keep_original': 'False',
+        'basic_epg_tvh_insert_number': 'False',
+        'basic_epg_tivimate_keep_original': 'True',
+        'basic_epg_tivimate_insert_number': 'True',
     }
 
     def __init__(self, P):
@@ -1541,6 +1575,26 @@ class ModuleBasic(PluginModuleBase):
             arg['basic_epg_insert_tvh_channel_number'] = (
                 'True'
                 if str(P.ModelSetting.get('basic_epg_insert_tvh_channel_number') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+                else 'False'
+            )
+            arg['basic_epg_tvh_keep_original'] = (
+                'True'
+                if str(P.ModelSetting.get('basic_epg_tvh_keep_original') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+                else 'False'
+            )
+            arg['basic_epg_tvh_insert_number'] = (
+                'True'
+                if str(P.ModelSetting.get('basic_epg_tvh_insert_number') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+                else 'False'
+            )
+            arg['basic_epg_tivimate_keep_original'] = (
+                'True'
+                if str(P.ModelSetting.get('basic_epg_tivimate_keep_original') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+                else 'False'
+            )
+            arg['basic_epg_tivimate_insert_number'] = (
+                'True'
+                if str(P.ModelSetting.get('basic_epg_tivimate_insert_number') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
                 else 'False'
             )
             arg['basic_epg_dlive_channel_id'] = P.ModelSetting.get('basic_epg_dlive_channel_id') or 'DLIVE_SONGPA'
@@ -1788,7 +1842,8 @@ class ModuleBasic(PluginModuleBase):
                     
                     xml_path = _epg_cache_xml_path()
                     if os.path.exists(xml_path):
-                        _build_epg_tvh_cache(xml_path)
+                        _build_epg_cache('tvh', xml_path)
+                        _build_epg_cache('tivimate', xml_path)
                     
                     return jsonify({'ret': 'success', 'msg': msg})
                 except Exception as e:
@@ -1958,10 +2013,10 @@ class ModuleBasic(PluginModuleBase):
 
             elif sub == 'epg_tvh':
                 xml_path = _epg_cache_tvh_xml_path()
-                if _epg_tvh_cache_needs_rebuild():
-                    tvh_summary = _build_epg_tvh_cache(_epg_cache_xml_path())
+                if _epg_cache_needs_rebuild('tvh'):
+                    tvh_summary = _build_epg_cache('tvh', _epg_cache_xml_path())
                     meta = _load_epg_meta()
-                    meta.update(tvh_summary)
+                    meta.update({f'tvh_{k}': v for k, v in tvh_summary.items()})
                     _save_epg_meta(meta)
 
                 if not os.path.exists(xml_path):
@@ -1973,11 +2028,11 @@ class ModuleBasic(PluginModuleBase):
                 )
 
             elif sub == 'epg_tivimate':
-                xml_path = _epg_cache_tvh_xml_path()
-                if _epg_tvh_cache_needs_rebuild():
-                    tvh_summary = _build_epg_tvh_cache(_epg_cache_xml_path())
+                xml_path = _epg_cache_tivimate_xml_path()
+                if _epg_cache_needs_rebuild('tivimate'):
+                    tivimate_summary = _build_epg_cache('tivimate', _epg_cache_xml_path())
                     meta = _load_epg_meta()
-                    meta.update(tvh_summary)
+                    meta.update({f'tivimate_{k}': v for k, v in tivimate_summary.items()})
                     _save_epg_meta(meta)
 
                 if not os.path.exists(xml_path):
@@ -2002,6 +2057,10 @@ def _normalize_logo_and_get_static_url(url, base_url):
         from PIL import Image
         from io import BytesIO
         
+        # Bypass SVG images immediately as PIL does not support SVG
+        if url.lower().split('?')[0].endswith('.svg'):
+            return url
+            
         h = hashlib.md5(url.encode('utf-8')).hexdigest()
         static_dir = '/data/plugins/tvh_m3u_plugin/docs/assets/normalized_logo'
         if not os.path.exists(static_dir):
@@ -2016,6 +2075,11 @@ def _normalize_logo_and_get_static_url(url, base_url):
             
         res = requests.get(url, timeout=5)
         if res.status_code != 200:
+            return url
+            
+        content_type = res.headers.get('Content-Type', '').lower()
+        content_start = res.content.strip()[:20].lower()
+        if 'svg' in content_type or content_start.startswith(b'<svg') or content_start.startswith(b'<?xml'):
             return url
             
         im = Image.open(BytesIO(res.content))
