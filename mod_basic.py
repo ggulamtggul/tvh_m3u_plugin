@@ -660,7 +660,6 @@ def _build_epg_cache(target, xml_path=None):
         candidate_values = [
             channel_name,
             getattr(row, 'sheet_channel_id', ''),
-            getattr(row, 'sheet_group_name', ''),
         ] + get_db_rule_candidate_values(channel_name)
         for value in candidate_values:
             for candidate_value in _iter_epg_match_values(value):
