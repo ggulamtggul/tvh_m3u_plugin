@@ -1729,12 +1729,18 @@ class ModuleBasic(PluginModuleBase):
                 try:
                     ModelLogoOverride.save(channel_uuid, channel_name, provider, url_template)
 
-                    xml_path = _epg_cache_xml_path()
-                    if os.path.exists(xml_path):
-                        _build_epg_cache('tvh', xml_path)
-                        _build_epg_cache('tivimate', xml_path)
+                    def rebuild_epg_in_background():
+                        try:
+                            xml_path = _epg_cache_xml_path()
+                            if os.path.exists(xml_path):
+                                _build_epg_cache('tvh', xml_path)
+                                _build_epg_cache('tivimate', xml_path)
+                        except Exception as ex:
+                            logger.error(f'[ff_tvh_m3u] background epg rebuild failed after logo select: {str(ex)}')
 
-                    return jsonify({'ret': 'success', 'msg': f'[{channel_name}] 채널의 로고가 [{provider}] 로고로 설정되었습니다.'})
+                    threading.Thread(target=rebuild_epg_in_background, daemon=True).start()
+
+                    return jsonify({'ret': 'success', 'msg': f'[{channel_name}] 채널의 로고가 [{provider}] 로고로 설정되었습니다. (EPG 반영은 백그라운드 진행 중)'})
                 except Exception as e:
                     logger.exception(f'[ff_tvh_m3u] logo_preview_select failed: {str(e)}')
                     return jsonify({'ret': 'danger', 'msg': f'로고 저장 중 오류가 발생했습니다: {str(e)}'})
@@ -1754,12 +1760,18 @@ class ModuleBasic(PluginModuleBase):
                     if not deleted:
                         return jsonify({'ret': 'warning', 'msg': '수동 선택된 로고 설정이 없습니다.'})
 
-                    xml_path = _epg_cache_xml_path()
-                    if os.path.exists(xml_path):
-                        _build_epg_cache('tvh', xml_path)
-                        _build_epg_cache('tivimate', xml_path)
+                    def rebuild_epg_in_background():
+                        try:
+                            xml_path = _epg_cache_xml_path()
+                            if os.path.exists(xml_path):
+                                _build_epg_cache('tvh', xml_path)
+                                _build_epg_cache('tivimate', xml_path)
+                        except Exception as ex:
+                            logger.error(f'[ff_tvh_m3u] background epg rebuild failed after logo clear: {str(ex)}')
 
-                    return jsonify({'ret': 'success', 'msg': f'[{channel_name}] 채널의 로고 수동 설정이 해제되었습니다.'})
+                    threading.Thread(target=rebuild_epg_in_background, daemon=True).start()
+
+                    return jsonify({'ret': 'success', 'msg': f'[{channel_name}] 채널의 로고 수동 설정이 해제되었습니다. (EPG 반영은 백그라운드 진행 중)'})
                 except Exception as e:
                     logger.exception(f'[ff_tvh_m3u] logo_preview_clear failed: {str(e)}')
                     return jsonify({'ret': 'danger', 'msg': f'로고 해제 중 오류가 발생했습니다: {str(e)}'})
@@ -1876,15 +1888,21 @@ class ModuleBasic(PluginModuleBase):
                 try:
                     if not epg_id:
                         ModelEPGOverride.delete(channel_uuid)
-                        msg = '수동 매칭을 초기화(자동 매칭으로 전환)했습니다.'
+                        msg = '수동 매칭을 초기화(자동 매칭으로 전환)했습니다. (EPG 반영은 백그라운드 진행 중)'
                     else:
                         ModelEPGOverride.save(channel_uuid, epg_id, epg_name)
-                        msg = f'[{epg_name}] 채널로 수동 매칭을 저장했습니다.'
+                        msg = f'[{epg_name}] 채널로 수동 매칭을 저장했습니다. (EPG 반영은 백그라운드 진행 중)'
                     
-                    xml_path = _epg_cache_xml_path()
-                    if os.path.exists(xml_path):
-                        _build_epg_cache('tvh', xml_path)
-                        _build_epg_cache('tivimate', xml_path)
+                    def rebuild_epg_in_background():
+                        try:
+                            xml_path = _epg_cache_xml_path()
+                            if os.path.exists(xml_path):
+                                _build_epg_cache('tvh', xml_path)
+                                _build_epg_cache('tivimate', xml_path)
+                        except Exception as ex:
+                            logger.error(f'[ff_tvh_m3u] background epg rebuild failed after epg override: {str(ex)}')
+
+                    threading.Thread(target=rebuild_epg_in_background, daemon=True).start()
                     
                     return jsonify({'ret': 'success', 'msg': msg})
                 except Exception as e:
