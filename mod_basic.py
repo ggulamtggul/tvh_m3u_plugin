@@ -385,6 +385,7 @@ def _iter_file_chunks(path, chunk_size=1024 * 256):
 
 def _normalize_epg_match_name(value):
     text = str(value or '').strip().lower()
+    text = text.replace('+', '플러스')
     return ''.join(ch for ch in text if ch.isalnum())
 
 
