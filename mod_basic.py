@@ -1712,16 +1712,57 @@ class ModuleBasic(PluginModuleBase):
 
 
             elif sub == 'logo_preview_select':
-                return jsonify({
-                    'ret': 'warning',
-                    'msg': '로고 선택 저장 기능은 아직 지원하지 않습니다.',
-                })
+                channel_uuid = str(request.form.get('channel_uuid') or '').strip()
+                provider = str(request.form.get('provider') or '').strip()
+                url_template = str(request.form.get('url_template') or '').strip()
+
+                if not channel_uuid or not provider or not url_template:
+                    return jsonify({'ret': 'warning', 'msg': '필수 파라미터가 누락되었습니다.'})
+
+                ch_map = ModelChannel.get_channel_map()
+                ch = ch_map.get(channel_uuid)
+                if not ch:
+                    return jsonify({'ret': 'warning', 'msg': '존재하지 않는 채널 UUID입니다.'})
+                
+                channel_name = ch.name
+
+                try:
+                    ModelLogoOverride.save(channel_uuid, channel_name, provider, url_template)
+
+                    xml_path = _epg_cache_xml_path()
+                    if os.path.exists(xml_path):
+                        _build_epg_cache('tvh', xml_path)
+                        _build_epg_cache('tivimate', xml_path)
+
+                    return jsonify({'ret': 'success', 'msg': f'[{channel_name}] 채널의 로고가 [{provider}] 로고로 설정되었습니다.'})
+                except Exception as e:
+                    logger.exception(f'[ff_tvh_m3u] logo_preview_select failed: {str(e)}')
+                    return jsonify({'ret': 'danger', 'msg': f'로고 저장 중 오류가 발생했습니다: {str(e)}'})
 
             elif sub == 'logo_preview_clear':
-                return jsonify({
-                    'ret': 'warning',
-                    'msg': '로고 선택 초기화 기능은 아직 지원하지 않습니다.',
-                })
+                channel_uuid = str(request.form.get('channel_uuid') or '').strip()
+
+                if not channel_uuid:
+                    return jsonify({'ret': 'warning', 'msg': '채널 UUID가 누락되었습니다.'})
+
+                ch_map = ModelChannel.get_channel_map()
+                ch = ch_map.get(channel_uuid)
+                channel_name = ch.name if ch else channel_uuid
+
+                try:
+                    deleted = ModelLogoOverride.delete(channel_uuid)
+                    if not deleted:
+                        return jsonify({'ret': 'warning', 'msg': '수동 선택된 로고 설정이 없습니다.'})
+
+                    xml_path = _epg_cache_xml_path()
+                    if os.path.exists(xml_path):
+                        _build_epg_cache('tvh', xml_path)
+                        _build_epg_cache('tivimate', xml_path)
+
+                    return jsonify({'ret': 'success', 'msg': f'[{channel_name}] 채널의 로고 수동 설정이 해제되었습니다.'})
+                except Exception as e:
+                    logger.exception(f'[ff_tvh_m3u] logo_preview_clear failed: {str(e)}')
+                    return jsonify({'ret': 'danger', 'msg': f'로고 해제 중 오류가 발생했습니다: {str(e)}'})
 
             elif sub == 'upload_custom_logo':
                 return jsonify(handle_custom_logo_upload(req))
