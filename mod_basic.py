@@ -440,7 +440,7 @@ def _xml_start_tag(name, attrs):
     return ''.join(pieces)
 
 
-def _update_epg_channel_icon(channel_elem, base_url='', channel_name=''):
+def _update_epg_channel_icon(channel_elem, base_url='', channel_name='', channel_uuid=''):
     display_names = []
     icon_elem = None
     current_icon_url = ''
@@ -458,6 +458,7 @@ def _update_epg_channel_icon(channel_elem, base_url='', channel_name=''):
     if not channel_name:
         channel_name = display_names[0] if display_names else str(channel_elem.attrib.get('id') or '').strip()
     final_logo_url = Task.get_effective_logo_url(
+        channel_uuid=channel_uuid,
         channel_name=channel_name,
         sheet_logo_url=current_icon_url,
         matched_channel_id='',
@@ -754,7 +755,7 @@ def _build_epg_cache(target, xml_path=None):
             node = ET.SubElement(channel_elem, 'display-name')
             node.text = name
 
-        _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name)
+        _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name, channel_uuid=channel_uuid)
 
         existing_icons = []
         for child in list(channel_elem):
