@@ -576,50 +576,6 @@ def _build_epg_cache(target, xml_path=None):
             if previous is None or entry.get('rank', 9999) < previous.get('rank', 9999):
                 epg_index[norm][provider_key] = entry
 
-    context = ET.iterparse(raw_xml_path, events=('start', 'end'))
-    for event, elem in context:
-        if event == 'start' and not root_seen:
-            root_tag = _safe_tag_name(elem.tag) or 'tv'
-            root_attrs = dict(elem.attrib or {})
-            root_seen = True
-            continue
-
-        if event != 'end':
-            continue
-
-        tag = _safe_tag_name(elem.tag)
-        if tag == 'channel':
-            channel_id = str(elem.attrib.get('id') or '').strip()
-            provider_key = _detect_provider_from_channel_id(channel_id)
-            if provider_key and enabled_set and provider_key not in enabled_set:
-                elem.clear()
-                continue
-
-            display_names = []
-            for child in list(elem):
-                if _safe_tag_name(child.tag) == 'display-name':
-                    name_text = str(child.text or '').strip()
-                    if name_text:
-                        display_names.append(name_text)
-
-            rank = rank_map.get(provider_key, 9999)
-            entry = {
-                'rank': rank,
-                'provider': provider_key,
-                'channel_id': channel_id,
-                'display_names': display_names,
-                'xml': ET.tostring(elem, encoding='utf-8'),
-            }
-            for name in display_names:
-                add_index(name, provider_key, entry)
-            add_index(channel_id, provider_key, entry)
-            epg_entries.append(entry)
-            elem.clear()
-        elif tag == 'programme':
-            elem.clear()
-
-    epg_id_to_entry = {item['channel_id']: item for item in epg_entries}
-
     selected_channels = []
     raw_id_to_uuids = {}
     matched_count = 0
@@ -645,159 +601,214 @@ def _build_epg_cache(target, xml_path=None):
                                 return item, 'contains'
         return None, ''
 
-    for row in ModelChannel.get_all():
-        try:
-            enabled = bool(getattr(row, 'enabled', True))
-        except Exception:
-            enabled = True
-        if not enabled:
-            continue
+    def perform_channel_matching():
+        nonlocal matched_count, unmatched_count
+        epg_id_to_entry = {item['channel_id']: item for item in epg_entries}
+        
+        for row in ModelChannel.get_all():
+            try:
+                enabled = bool(getattr(row, 'enabled', True))
+            except Exception:
+                enabled = True
+            if not enabled:
+                continue
 
-        channel_uuid = str(getattr(row, 'channel_uuid', '') or '').strip()
-        channel_name = str(getattr(row, 'name', '') or '').strip()
-        if not channel_uuid or not channel_name:
-            continue
+            channel_uuid = str(getattr(row, 'channel_uuid', '') or '').strip()
+            channel_name = str(getattr(row, 'name', '') or '').strip()
+            if not channel_uuid or not channel_name:
+                continue
 
-        search_keys = []
-        candidate_values = [
-            channel_name,
-            getattr(row, 'sheet_channel_id', ''),
-        ] + get_db_rule_candidate_values(channel_name)
-        for value in candidate_values:
-            for candidate_value in _iter_epg_match_values(value):
-                norm = _normalize_epg_match_name(candidate_value)
-                if norm and norm not in search_keys:
-                    search_keys.append(norm)
+            search_keys = []
+            candidate_values = [
+                channel_name,
+                getattr(row, 'sheet_channel_id', ''),
+            ] + get_db_rule_candidate_values(channel_name)
+            for value in candidate_values:
+                for candidate_value in _iter_epg_match_values(value):
+                    norm = _normalize_epg_match_name(candidate_value)
+                    if norm and norm not in search_keys:
+                        search_keys.append(norm)
 
-        selected = None
-        match_rule = ''
+            selected = None
+            match_rule = ''
 
-        override_info = override_map.get(channel_uuid)
-        if override_info:
-            epg_id = override_info.get('epg_id')
-            selected = epg_id_to_entry.get(epg_id)
-            if selected is not None:
-                match_rule = 'manual'
-
-        if selected is None:
-            for provider_key in provider_match_order:
-                for search_key in search_keys:
-                    candidate = epg_index.get(search_key, {}).get(provider_key)
-                    if candidate is not None:
-                        selected = candidate
-                        match_rule = 'exact'
-                        break
+            override_info = override_map.get(channel_uuid)
+            if override_info:
+                epg_id = override_info.get('epg_id')
+                selected = epg_id_to_entry.get(epg_id)
                 if selected is not None:
-                    break
+                    match_rule = 'manual'
 
-        if selected is None:
-            selected, match_rule = find_fallback_candidate(search_keys)
+            if selected is None:
+                for provider_key in provider_match_order:
+                    for search_key in search_keys:
+                        candidate = epg_index.get(search_key, {}).get(provider_key)
+                        if candidate is not None:
+                            selected = candidate
+                            match_rule = 'exact'
+                            break
+                    if selected is not None:
+                        break
 
-        if selected is None:
-            unmatched_count += 1
-            match_rows.append({
-                'channel_uuid': channel_uuid,
-                'channel_name': channel_name,
-                'matched': False,
-                'search_keys': search_keys,
-            })
-            continue
+            if selected is None:
+                selected, match_rule = find_fallback_candidate(search_keys)
 
-        try:
-            channel_elem = ET.fromstring(selected.get('xml') or b'')
-        except Exception:
-            unmatched_count += 1
-            match_rows.append({
-                'channel_uuid': channel_uuid,
-                'channel_name': channel_name,
-                'matched': False,
-                'reason': 'selected_xml_parse_failed',
-                'search_keys': search_keys,
-                'source_channel_id': selected.get('channel_id'),
-                'source_display_names': selected.get('display_names') or [],
-            })
-            continue
+            if selected is None:
+                unmatched_count += 1
+                match_rows.append({
+                    'channel_uuid': channel_uuid,
+                    'channel_name': channel_name,
+                    'matched': False,
+                    'search_keys': search_keys,
+                })
+                continue
 
-        channel_elem.set('id', channel_uuid)
-        try:
-            ch_num = int(getattr(row, 'number', 0) or 0)
-        except (ValueError, TypeError):
-            ch_num = 0
+            try:
+                channel_elem = ET.fromstring(selected.get('xml') or b'')
+            except Exception:
+                unmatched_count += 1
+                match_rows.append({
+                    'channel_uuid': channel_uuid,
+                    'channel_name': channel_name,
+                    'matched': False,
+                    'reason': 'selected_xml_parse_failed',
+                    'search_keys': search_keys,
+                    'source_channel_id': selected.get('channel_id'),
+                    'source_display_names': selected.get('display_names') or [],
+                })
+                continue
 
-        if target == 'tvh':
-            insert_number = str(P.ModelSetting.get('basic_epg_tvh_insert_number') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
-            keep_original = str(P.ModelSetting.get('basic_epg_tvh_keep_original') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
-        else:
-            insert_number = str(P.ModelSetting.get('basic_epg_tivimate_insert_number') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
-            keep_original = str(P.ModelSetting.get('basic_epg_tivimate_keep_original') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+            channel_elem.set('id', channel_uuid)
+            try:
+                ch_num = int(getattr(row, 'number', 0) or 0)
+            except (ValueError, TypeError):
+                ch_num = 0
 
-        new_displays = []
-        if insert_number and ch_num > 0:
-            new_displays.append(f"{ch_num} {channel_name}")
-            new_displays.append(channel_name)
-            new_displays.append(str(ch_num))
-        else:
-            new_displays.append(channel_name)
+            if target == 'tvh':
+                insert_number = str(P.ModelSetting.get('basic_epg_tvh_insert_number') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+                keep_original = str(P.ModelSetting.get('basic_epg_tvh_keep_original') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+            else:
+                insert_number = str(P.ModelSetting.get('basic_epg_tivimate_insert_number') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
+                keep_original = str(P.ModelSetting.get('basic_epg_tivimate_keep_original') or 'True').strip().lower() in ['true', 'on', '1', 'yes', 'y']
 
-        existing_names = []
-        if keep_original:
+            new_displays = []
+            if insert_number and ch_num > 0:
+                new_displays.append(f"{ch_num} {channel_name}")
+                new_displays.append(channel_name)
+                new_displays.append(str(ch_num))
+            else:
+                new_displays.append(channel_name)
+
+            existing_names = []
+            if keep_original:
+                for child in list(channel_elem):
+                    if _safe_tag_name(child.tag) == 'display-name':
+                        name_text = str(child.text or '').strip()
+                        if name_text and name_text not in existing_names and name_text not in new_displays:
+                            existing_names.append(name_text)
+
             for child in list(channel_elem):
                 if _safe_tag_name(child.tag) == 'display-name':
-                    name_text = str(child.text or '').strip()
-                    if name_text and name_text not in existing_names and name_text not in new_displays:
-                        existing_names.append(name_text)
+                    channel_elem.remove(child)
 
-        for child in list(channel_elem):
-            if _safe_tag_name(child.tag) == 'display-name':
-                channel_elem.remove(child)
+            for name in new_displays + existing_names:
+                node = ET.SubElement(channel_elem, 'display-name')
+                node.text = name
 
-        for name in new_displays + existing_names:
-            node = ET.SubElement(channel_elem, 'display-name')
-            node.text = name
+            _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name, channel_uuid=channel_uuid)
 
-        _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name, channel_uuid=channel_uuid)
+            existing_icons = []
+            for child in list(channel_elem):
+                if _safe_tag_name(child.tag) == 'icon':
+                    existing_icons.append(child)
+                    channel_elem.remove(child)
 
-        existing_icons = []
-        for child in list(channel_elem):
-            if _safe_tag_name(child.tag) == 'icon':
-                existing_icons.append(child)
-                channel_elem.remove(child)
-
-        for icon in existing_icons:
-            channel_elem.append(icon)
-        selected_channels.append({
-            'channel_uuid': channel_uuid,
-            'source_channel_id': selected.get('channel_id'),
-            'xml': ET.tostring(channel_elem, encoding='utf-8'),
-        })
-        raw_id_to_uuids.setdefault(selected.get('channel_id'), []).append(channel_uuid)
-        matched_count += 1
-        match_rows.append({
-            'channel_uuid': channel_uuid,
-            'channel_name': channel_name,
-            'matched': True,
-            'match_rule': match_rule,
-            'matched_provider': selected.get('provider'),
-            'source_channel_id': selected.get('channel_id'),
-            'source_display_names': selected.get('display_names') or [],
-            'search_keys': search_keys,
-        })
+            for icon in existing_icons:
+                channel_elem.append(icon)
+            selected_channels.append({
+                'channel_uuid': channel_uuid,
+                'source_channel_id': selected.get('channel_id'),
+                'xml': ET.tostring(channel_elem, encoding='utf-8'),
+            })
+            raw_id_to_uuids.setdefault(selected.get('channel_id'), []).append(channel_uuid)
+            matched_count += 1
+            match_rows.append({
+                'channel_uuid': channel_uuid,
+                'channel_name': channel_name,
+                'matched': True,
+                'match_rule': match_rule,
+                'matched_provider': selected.get('provider'),
+                'source_channel_id': selected.get('channel_id'),
+                'source_display_names': selected.get('display_names') or [],
+                'search_keys': search_keys,
+            })
 
     channel_count = 0
     programme_count = 0
-    with open(tmp_path, 'wb') as fw:
-        fw.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
-        fw.write(_xml_start_tag(root_tag, root_attrs).encode('utf-8'))
+    fw = None
+    channel_phase_done = False
+    is_standard_xmltv = True
 
-        for item in selected_channels:
-            fw.write(item.get('xml') or b'')
-            fw.write(b'\n')
-            channel_count += 1
+    try:
+        context = ET.iterparse(raw_xml_path, events=('start', 'end'))
+        for event, elem in context:
+            if event == 'start' and not root_seen:
+                root_tag = _safe_tag_name(elem.tag) or 'tv'
+                root_attrs = dict(elem.attrib or {})
+                root_seen = True
+                continue
 
-        context = ET.iterparse(raw_xml_path, events=('end',))
-        for _event, elem in context:
+            if event != 'end':
+                continue
+
             tag = _safe_tag_name(elem.tag)
-            if tag == 'programme':
+            if tag == 'channel':
+                channel_id = str(elem.attrib.get('id') or '').strip()
+                provider_key = _detect_provider_from_channel_id(channel_id)
+                if provider_key and enabled_set and provider_key not in enabled_set:
+                    elem.clear()
+                    continue
+
+                display_names = []
+                for child in list(elem):
+                    if _safe_tag_name(child.tag) == 'display-name':
+                        name_text = str(child.text or '').strip()
+                        if name_text:
+                            display_names.append(name_text)
+
+                rank = rank_map.get(provider_key, 9999)
+                entry = {
+                    'rank': rank,
+                    'provider': provider_key,
+                    'channel_id': channel_id,
+                    'display_names': display_names,
+                    'xml': ET.tostring(elem, encoding='utf-8'),
+                }
+                for name in display_names:
+                    add_index(name, provider_key, entry)
+                add_index(channel_id, provider_key, entry)
+                epg_entries.append(entry)
+                elem.clear()
+
+            elif tag == 'programme':
+                if not channel_phase_done:
+                    if not epg_entries:
+                        is_standard_xmltv = False
+                        break
+                    
+                    perform_channel_matching()
+                    
+                    fw = open(tmp_path, 'wb')
+                    fw.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
+                    fw.write(_xml_start_tag(root_tag, root_attrs).encode('utf-8'))
+
+                    for item in selected_channels:
+                        fw.write(item.get('xml') or b'')
+                        fw.write(b'\n')
+                        channel_count += 1
+                        
+                    channel_phase_done = True
+
                 channel_id = str(elem.attrib.get('channel') or '').strip()
                 target_uuids = raw_id_to_uuids.get(channel_id) or []
                 for target_uuid in target_uuids:
@@ -806,10 +817,101 @@ def _build_epg_cache(target, xml_path=None):
                     fw.write(b'\n')
                     programme_count += 1
                 elem.clear()
-            elif tag == 'channel':
-                elem.clear()
 
-        fw.write(f'</{root_tag}>\n'.encode('utf-8'))
+        if is_standard_xmltv and not channel_phase_done:
+            perform_channel_matching()
+            fw = open(tmp_path, 'wb')
+            fw.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
+            fw.write(_xml_start_tag(root_tag, root_attrs).encode('utf-8'))
+            for item in selected_channels:
+                fw.write(item.get('xml') or b'')
+                fw.write(b'\n')
+                channel_count += 1
+            channel_phase_done = True
+
+        if is_standard_xmltv and fw:
+            fw.write(f'</{root_tag}>\n'.encode('utf-8'))
+            fw.close()
+            fw = None
+
+    except Exception as e:
+        if fw:
+            fw.close()
+            fw = None
+        raise e
+
+    if not is_standard_xmltv:
+        logger.warning(f'[ff_tvh_m3u] EPG source {raw_xml_path} structure is non-standard. Falling back to 2-pass parser.')
+        epg_entries.clear()
+        epg_index.clear()
+        
+        try:
+            context = ET.iterparse(raw_xml_path, events=('end',))
+            for _event, elem in context:
+                tag = _safe_tag_name(elem.tag)
+                if tag == 'channel':
+                    channel_id = str(elem.attrib.get('id') or '').strip()
+                    provider_key = _detect_provider_from_channel_id(channel_id)
+                    if provider_key and enabled_set and provider_key not in enabled_set:
+                        elem.clear()
+                        continue
+                    display_names = []
+                    for child in list(elem):
+                        if _safe_tag_name(child.tag) == 'display-name':
+                            name_text = str(child.text or '').strip()
+                            if name_text:
+                                display_names.append(name_text)
+                    rank = rank_map.get(provider_key, 9999)
+                    entry = {
+                        'rank': rank,
+                        'provider': provider_key,
+                        'channel_id': channel_id,
+                        'display_names': display_names,
+                        'xml': ET.tostring(elem, encoding='utf-8'),
+                    }
+                    for name in display_names:
+                        add_index(name, provider_key, entry)
+                    add_index(channel_id, provider_key, entry)
+                    epg_entries.append(entry)
+                elem.clear()
+        except Exception as e:
+            logger.error(f'[ff_tvh_m3u] non-standard fallback 1-pass error: {str(e)}')
+
+        selected_channels.clear()
+        raw_id_to_uuids.clear()
+        matched_count = 0
+        unmatched_count = 0
+        match_rows.clear()
+        perform_channel_matching()
+
+        channel_count = 0
+        programme_count = 0
+        with open(tmp_path, 'wb') as fw_fb:
+            fw_fb.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
+            fw_fb.write(_xml_start_tag(root_tag, root_attrs).encode('utf-8'))
+
+            for item in selected_channels:
+                fw_fb.write(item.get('xml') or b'')
+                fw_fb.write(b'\n')
+                channel_count += 1
+
+            try:
+                context = ET.iterparse(raw_xml_path, events=('end',))
+                for _event, elem in context:
+                    tag = _safe_tag_name(elem.tag)
+                    if tag == 'programme':
+                        channel_id = str(elem.attrib.get('channel') or '').strip()
+                        target_uuids = raw_id_to_uuids.get(channel_id) or []
+                        for target_uuid in target_uuids:
+                            elem.set('channel', target_uuid)
+                            fw_fb.write(ET.tostring(elem, encoding='utf-8'))
+                            fw_fb.write(b'\n')
+                            programme_count += 1
+                    elem.clear()
+            except Exception as e:
+                logger.error(f'[ff_tvh_m3u] non-standard fallback 2-pass error: {str(e)}')
+
+            fw_fb.write(f'</{root_tag}>\n'.encode('utf-8'))
 
     os.replace(tmp_path, final_path)
     try:
