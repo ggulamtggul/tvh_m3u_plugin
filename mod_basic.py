@@ -717,6 +717,15 @@ def _build_epg_cache(target, xml_path=None):
 
             _update_epg_channel_icon(channel_elem, base_url=base_url, channel_name=channel_name, channel_uuid=channel_uuid)
 
+            # Insert channel group as category
+            group_name = str(getattr(row, 'manual_group_name', '') or getattr(row, 'group_name', '') or '').strip()
+            if group_name:
+                for child in list(channel_elem):
+                    if _safe_tag_name(child.tag) == 'category':
+                        channel_elem.remove(child)
+                cat_node = ET.SubElement(channel_elem, 'category')
+                cat_node.text = group_name
+
             existing_icons = []
             for child in list(channel_elem):
                 if _safe_tag_name(child.tag) == 'icon':
