@@ -1882,12 +1882,11 @@ class ModuleBasic(PluginModuleBase):
 
                     list_data = []
                     for (prov, tmpl), val in all_logos.items():
-                        preview = Task._replace_placeholder_url(tmpl, base_url=base_url)
                         list_data.append({
                             'name': val['name'],
                             'provider': prov,
                             'url_template': tmpl,
-                            'preview_url': preview,
+                            'preview_url': tmpl,
                         })
                     
                     list_data.sort(key=lambda x: x['name'].lower())
