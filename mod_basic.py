@@ -1847,7 +1847,54 @@ class ModuleBasic(PluginModuleBase):
                     logger.exception(f'[ff_tvh_m3u] save_logo_priority failed: {str(e)}')
                     return jsonify({'ret': 'danger', 'msg': f'로고 우선순위 저장 실패: {str(e)}'})
 
+            elif sub == 'all_logo_list':
+                try:
+                    base_url = ''
+                    try:
+                        base_url = request.host_url.rstrip('/')
+                    except Exception:
+                        base_url = ''
 
+                    cache = TaskM3U._load_logo_cache()
+                    all_logos = {}
+
+                    # Collect custom logos
+                    for name, providers in cache.get('custom_name_map', {}).items():
+                        for prov, entry in providers.items():
+                            key = (prov, entry.get('logo_url_template') or '')
+                            if key not in all_logos:
+                                all_logos[key] = {
+                                    'name': entry.get('standard_name') or entry.get('source_channel_name') or name,
+                                    'provider': prov,
+                                    'url_template': entry.get('logo_url_template') or '',
+                                }
+
+                    # Collect provider logos
+                    for name, providers in cache.get('provider_name_map', {}).items():
+                        for prov, entry in providers.items():
+                            key = (prov, entry.get('logo_url_template') or '')
+                            if key not in all_logos:
+                                all_logos[key] = {
+                                    'name': entry.get('standard_name') or entry.get('source_channel_name') or name,
+                                    'provider': prov,
+                                    'url_template': entry.get('logo_url_template') or '',
+                                }
+
+                    list_data = []
+                    for (prov, tmpl), val in all_logos.items():
+                        preview = TaskM3U._replace_placeholder_url(tmpl, base_url=base_url)
+                        list_data.append({
+                            'name': val['name'],
+                            'provider': prov,
+                            'url_template': tmpl,
+                            'preview_url': preview,
+                        })
+                    
+                    list_data.sort(key=lambda x: x['name'].lower())
+                    return jsonify({'ret': 'success', 'list': list_data})
+                except Exception as e:
+                    logger.exception(f'[ff_tvh_m3u] all_logo_list failed: {str(e)}')
+                    return jsonify({'ret': 'danger', 'msg': str(e), 'list': []})
             elif sub == 'logo_preview_select':
                 channel_uuid = str(request.form.get('channel_uuid') or '').strip()
                 provider = str(request.form.get('provider') or '').strip()
