@@ -1855,7 +1855,7 @@ class ModuleBasic(PluginModuleBase):
                     except Exception:
                         base_url = ''
 
-                    cache = TaskM3U._load_logo_cache()
+                    cache = Task._load_logo_cache()
                     all_logos = {}
 
                     # Collect custom logos
@@ -1882,7 +1882,7 @@ class ModuleBasic(PluginModuleBase):
 
                     list_data = []
                     for (prov, tmpl), val in all_logos.items():
-                        preview = TaskM3U._replace_placeholder_url(tmpl, base_url=base_url)
+                        preview = Task._replace_placeholder_url(tmpl, base_url=base_url)
                         list_data.append({
                             'name': val['name'],
                             'provider': prov,
