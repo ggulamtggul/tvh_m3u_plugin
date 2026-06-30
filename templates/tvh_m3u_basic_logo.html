@@ -133,7 +133,12 @@
 </div>
 
 <script>
-(function() {
+$(document).ready(function() {
+  var modalEl = document.getElementById('logoSearchModal');
+  if (modalEl) {
+    document.body.appendChild(modalEl);
+  }
+
   var listEl = document.getElementById('logo-priority-list');
   if (listEl) {
     var defaultOrder = ['custom', 'kt', 'wavve', 'tving', 'sk'];
@@ -207,78 +212,6 @@
       body: body
     }).then(function(resp) { return resp.json(); });
   }
-
-  document.addEventListener('click', function(evt) {
-    var candidate = evt.target.closest('.logo-candidate-box');
-    if (candidate) {
-      var tr = candidate.closest('tr[data-channel-uuid]');
-      if (!tr) return;
-      var channelUuid = tr.getAttribute('data-channel-uuid') || '';
-      var provider = candidate.getAttribute('data-provider') || '';
-      var urlTemplate = candidate.getAttribute('data-url-template') || '';
-      postForm('/{{ arg["package_name"] }}/ajax/{{ arg["ajax_sub"] }}/logo_preview_select',
-        'channel_uuid=' + encodeURIComponent(channelUuid) +
-        '&provider=' + encodeURIComponent(provider) +
-        '&url_template=' + encodeURIComponent(urlTemplate)
-      ).then(function(data) {
-        alert(data.msg || (data.ret === 'success' ? '저장했습니다.' : '실패했습니다.'));
-        if (data.ret === 'success') location.reload();
-      }).catch(function(err) {
-        alert('저장 실패: ' + err);
-      });
-      return;
-    }
-
-    var clearBtn = evt.target.closest('.js-logo-clear');
-    if (clearBtn) {
-      var tr = clearBtn.closest('tr[data-channel-uuid]');
-      if (!tr) return;
-      var channelUuid = tr.getAttribute('data-channel-uuid') || '';
-      postForm('/{{ arg["package_name"] }}/ajax/{{ arg["ajax_sub"] }}/logo_preview_clear',
-        'channel_uuid=' + encodeURIComponent(channelUuid)
-      ).then(function(data) {
-        alert(data.msg || (data.ret === 'success' ? '해제했습니다.' : '실패했습니다.'));
-        if (data.ret === 'success') location.reload();
-      }).catch(function(err) {
-        alert('해제 실패: ' + err);
-      });
-    }
-
-    var searchBtn = evt.target.closest('.js-logo-search');
-    if (searchBtn) {
-      var tr = searchBtn.closest('tr[data-channel-uuid]');
-      if (!tr) return;
-      currentSearchChannelUuid = tr.getAttribute('data-channel-uuid') || '';
-      var channelName = searchBtn.getAttribute('data-channel-name') || '';
-
-      if (modalInput) modalInput.value = channelName;
-
-      logoSearchModal.modal('show');
-
-      if (!logoListCache) {
-        if (modalLoading) modalLoading.style.display = 'block';
-        if (modalContainer) modalContainer.innerHTML = '';
-        
-        fetch('/{{ arg["package_name"] }}/ajax/{{ arg["ajax_sub"] }}/all_logo_list')
-          .then(function(resp) { return resp.json(); })
-          .then(function(data) {
-            if (modalLoading) modalLoading.style.display = 'none';
-            if (data.ret === 'success') {
-              logoListCache = data.list || [];
-              renderModalLogos(channelName);
-            } else {
-              if (modalContainer) modalContainer.innerHTML = '<div class="text-danger">' + (data.msg || '로딩 실패') + '</div>';
-            }
-          })
-          .catch(function(err) {
-            if (modalLoading) modalLoading.style.display = 'none';
-            if (modalContainer) modalContainer.innerHTML = '<div class="text-danger">' + err + '</div>';
-          });
-      } else {
-        renderModalLogos(channelName);
-      }
-    }
-  });
 
   var currentSearchChannelUuid = '';
   var logoListCache = null;
@@ -361,7 +294,80 @@
       });
     });
   }
-})();
+
+  document.addEventListener('click', function(evt) {
+    var candidate = evt.target.closest('.logo-candidate-box');
+    if (candidate) {
+      var tr = candidate.closest('tr[data-channel-uuid]');
+      if (!tr) return;
+      var channelUuid = tr.getAttribute('data-channel-uuid') || '';
+      var provider = candidate.getAttribute('data-provider') || '';
+      var urlTemplate = candidate.getAttribute('data-url-template') || '';
+      postForm('/{{ arg["package_name"] }}/ajax/{{ arg["ajax_sub"] }}/logo_preview_select',
+        'channel_uuid=' + encodeURIComponent(channelUuid) +
+        '&provider=' + encodeURIComponent(provider) +
+        '&url_template=' + encodeURIComponent(urlTemplate)
+      ).then(function(data) {
+        alert(data.msg || (data.ret === 'success' ? '저장했습니다.' : '실패했습니다.'));
+        if (data.ret === 'success') location.reload();
+      }).catch(function(err) {
+        alert('저장 실패: ' + err);
+      });
+      return;
+    }
+
+    var clearBtn = evt.target.closest('.js-logo-clear');
+    if (clearBtn) {
+      var tr = clearBtn.closest('tr[data-channel-uuid]');
+      if (!tr) return;
+      var channelUuid = tr.getAttribute('data-channel-uuid') || '';
+      postForm('/{{ arg["package_name"] }}/ajax/{{ arg["ajax_sub"] }}/logo_preview_clear',
+        'channel_uuid=' + encodeURIComponent(channelUuid)
+      ).then(function(data) {
+        alert(data.msg || (data.ret === 'success' ? '해제했습니다.' : '실패했습니다.'));
+        if (data.ret === 'success') location.reload();
+      }).catch(function(err) {
+        alert('해제 실패: ' + err);
+      });
+      return;
+    }
+
+    var searchBtn = evt.target.closest('.js-logo-search');
+    if (searchBtn) {
+      var tr = searchBtn.closest('tr[data-channel-uuid]');
+      if (!tr) return;
+      currentSearchChannelUuid = tr.getAttribute('data-channel-uuid') || '';
+      var channelName = searchBtn.getAttribute('data-channel-name') || '';
+
+      if (modalInput) modalInput.value = channelName;
+
+      logoSearchModal.modal('show');
+
+      if (!logoListCache) {
+        if (modalLoading) modalLoading.style.display = 'block';
+        if (modalContainer) modalContainer.innerHTML = '';
+        
+        fetch('/{{ arg["package_name"] }}/ajax/{{ arg["ajax_sub"] }}/all_logo_list')
+          .then(function(resp) { return resp.json(); })
+          .then(function(data) {
+            if (modalLoading) modalLoading.style.display = 'none';
+            if (data.ret === 'success') {
+              logoListCache = data.list || [];
+              renderModalLogos(channelName);
+            } else {
+              if (modalContainer) modalContainer.innerHTML = '<div class="text-danger">' + (data.msg || '로딩 실패') + '</div>';
+            }
+          })
+          .catch(function(err) {
+            if (modalLoading) modalLoading.style.display = 'none';
+            if (modalContainer) modalContainer.innerHTML = '<div class="text-danger">' + err + '</div>';
+          });
+      } else {
+        renderModalLogos(channelName);
+      }
+    }
+  });
+});
 </script>
 
 <!-- 로고 검색용 모달 다이얼로그 -->
