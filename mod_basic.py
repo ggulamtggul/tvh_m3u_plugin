@@ -1861,23 +1861,25 @@ class ModuleBasic(PluginModuleBase):
                     # Collect custom logos
                     for name, providers in cache.get('custom_name_map', {}).items():
                         for prov, entry in providers.items():
-                            key = (prov, entry.get('logo_url_template') or '')
+                            tmpl = entry.get('url_template') or ''
+                            key = (prov, tmpl)
                             if key not in all_logos:
                                 all_logos[key] = {
-                                    'name': entry.get('standard_name') or entry.get('source_channel_name') or name,
+                                    'name': name,
                                     'provider': prov,
-                                    'url_template': entry.get('logo_url_template') or '',
+                                    'url_template': tmpl,
                                 }
 
                     # Collect provider logos
                     for name, providers in cache.get('provider_name_map', {}).items():
                         for prov, entry in providers.items():
-                            key = (prov, entry.get('logo_url_template') or '')
+                            tmpl = entry.get('url_template') or ''
+                            key = (prov, tmpl)
                             if key not in all_logos:
                                 all_logos[key] = {
-                                    'name': entry.get('standard_name') or entry.get('source_channel_name') or name,
+                                    'name': name,
                                     'provider': prov,
-                                    'url_template': entry.get('logo_url_template') or '',
+                                    'url_template': tmpl,
                                 }
 
                     list_data = []
