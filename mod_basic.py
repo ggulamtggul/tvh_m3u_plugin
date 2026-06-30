@@ -943,6 +943,25 @@ def _build_epg_cache(target, xml_path=None):
     }
 
 
+def _get_db_last_override_time():
+    try:
+        from .model import DB_PATH
+        import sqlite3
+        if not os.path.exists(DB_PATH):
+            return ''
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        t1 = cur.execute("SELECT max(updated_time) as max_time FROM ff_tvh_m3u_epg_override").fetchone()
+        t2 = cur.execute("SELECT max(updated_time) as max_time FROM ff_tvh_m3u_logo_override").fetchone()
+        conn.close()
+        mt1 = t1['max_time'] if t1 and t1['max_time'] else ''
+        mt2 = t2['max_time'] if t2 and t2['max_time'] else ''
+        return max(mt1, mt2) if mt1 or mt2 else ''
+    except Exception:
+        return ''
+
+
 def _epg_cache_needs_rebuild(target):
     raw_path = _epg_cache_xml_path()
     if target == 'tvh':
@@ -961,6 +980,16 @@ def _epg_cache_needs_rebuild(target):
             return True
     except Exception:
         return True
+
+    # Check if manual overrides have changed since the last build
+    db_change = _get_db_last_override_time()
+    if db_change:
+        try:
+            file_mtime = datetime.fromtimestamp(os.path.getmtime(target_path)).strftime('%Y-%m-%d %H:%M:%S')
+            if db_change > file_mtime:
+                return True
+        except Exception:
+            return True
 
     meta = _load_epg_meta()
     provider_state = _get_epg_provider_state_from_settings()
@@ -1836,12 +1865,6 @@ class ModuleBasic(PluginModuleBase):
 
                 try:
                     ModelLogoOverride.save(channel_uuid, channel_name, provider, url_template)
-
-                    xml_path = _epg_cache_xml_path()
-                    if os.path.exists(xml_path):
-                        _build_epg_cache('tvh', xml_path)
-                        _build_epg_cache('tivimate', xml_path)
-
                     return jsonify({'ret': 'success', 'msg': f'[{channel_name}] 채널의 로고가 [{provider}] 로고로 설정되었습니다.'})
                 except Exception as e:
                     logger.exception(f'[ff_tvh_m3u] logo_preview_select failed: {str(e)}')
@@ -1861,11 +1884,6 @@ class ModuleBasic(PluginModuleBase):
                     deleted = ModelLogoOverride.delete(channel_uuid)
                     if not deleted:
                         return jsonify({'ret': 'warning', 'msg': '수동 선택된 로고 설정이 없습니다.'})
-
-                    xml_path = _epg_cache_xml_path()
-                    if os.path.exists(xml_path):
-                        _build_epg_cache('tvh', xml_path)
-                        _build_epg_cache('tivimate', xml_path)
 
                     return jsonify({'ret': 'success', 'msg': f'[{channel_name}] 채널의 로고 수동 설정이 해제되었습니다.'})
                 except Exception as e:
@@ -1988,11 +2006,6 @@ class ModuleBasic(PluginModuleBase):
                     else:
                         ModelEPGOverride.save(channel_uuid, epg_id, epg_name)
                         msg = f'[{epg_name}] 채널로 수동 매칭을 저장했습니다.'
-                    
-                    xml_path = _epg_cache_xml_path()
-                    if os.path.exists(xml_path):
-                        _build_epg_cache('tvh', xml_path)
-                        _build_epg_cache('tivimate', xml_path)
                     
                     return jsonify({'ret': 'success', 'msg': msg})
                 except Exception as e:
