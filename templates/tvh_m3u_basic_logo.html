@@ -236,11 +236,16 @@ $(document).ready(function() {
     var filterNorm = (filterText || '').trim().toLowerCase();
     var count = 0;
 
+    if (filterNorm.length < 2) {
+      modalContainer.innerHTML = '<div style="width:100%; text-align:center; padding:30px; color:#888;">검색어를 2글자 이상 입력해 주세요. (예: sbs, jtbc)</div>';
+      return;
+    }
+
     logoListCache.forEach(function(item) {
       var name = (item.name || '').toLowerCase();
       var provider = (item.provider || '').toLowerCase();
       
-      if (filterNorm && name.indexOf(filterNorm) === -1 && provider.indexOf(filterNorm) === -1) {
+      if (name.indexOf(filterNorm) === -1 && provider.indexOf(filterNorm) === -1) {
         return;
       }
       
@@ -266,9 +271,12 @@ $(document).ready(function() {
   }
 
   if (modalInput) {
-    modalInput.addEventListener('input', function() {
+    var triggerSearch = function() {
       renderModalLogos(modalInput.value);
-    });
+    };
+    modalInput.addEventListener('input', triggerSearch);
+    modalInput.addEventListener('keyup', triggerSearch);
+    modalInput.addEventListener('change', triggerSearch);
   }
 
   if (modalContainer) {
@@ -339,9 +347,14 @@ $(document).ready(function() {
       currentSearchChannelUuid = tr.getAttribute('data-channel-uuid') || '';
       var channelName = searchBtn.getAttribute('data-channel-name') || '';
 
-      if (modalInput) modalInput.value = channelName;
+      if (modalInput) {
+        modalInput.value = channelName;
+      }
 
       logoSearchModal.modal('show');
+      setTimeout(function() {
+        if (modalInput) modalInput.focus();
+      }, 350);
 
       if (!logoListCache) {
         if (modalLoading) modalLoading.style.display = 'block';
