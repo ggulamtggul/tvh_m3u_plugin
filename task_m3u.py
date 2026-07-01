@@ -1649,6 +1649,27 @@ class TaskM3U(TaskBase):
                 # 설정에서 호스트 주소를 가져오는 fallback 추가
                 base_url = TaskM3U._safe_model_setting_get('basic_server_url', '')
             logger.info(f'[ff_tvh_m3u] build_m3u playlist_map_count={playlist_map_count}')
+            
+            uuid_to_virtual_num = {}
+            if target == 'tivimate':
+                from model import ModelChannel
+                db_channels = ModelChannel.get_all()
+                def safe_float_convert(val):
+                    try:
+                        return float(val)
+                    except (ValueError, TypeError):
+                        return 9999.0
+                active_db_channels = []
+                for r in db_channels:
+                    try:
+                        enabled = bool(getattr(r, 'enabled', True))
+                    except Exception:
+                        enabled = True
+                    if enabled:
+                        active_db_channels.append(r)
+                active_db_channels.sort(key=lambda r: safe_float_convert(getattr(r, 'number', 9999)))
+                for idx, r in enumerate(active_db_channels):
+                    uuid_to_virtual_num[r.channel_uuid] = idx + 1
 
             added_count = 0
             skipped_disabled = 0
@@ -1662,8 +1683,8 @@ class TaskM3U(TaskBase):
                         continue
 
                     tvg_name = ch.get('name') or ''
-                    tvg_chno = ch.get('number') or 0
                     channel_uuid = ch.get('channel_uuid')
+                    tvg_chno = uuid_to_virtual_num.get(channel_uuid, ch.get('number') or 0) if target == 'tivimate' else (ch.get('number') or 0)
                     matched_channel_id = ch.get('sheet_id') or ch.get('sheet_channel_id') or ch.get('matched_channel_id') or ''
                     sheet_logo_url = str(ch.get('sheet_logo_url') or '').strip()
                     final_logo_url = TaskM3U.get_effective_logo_url(

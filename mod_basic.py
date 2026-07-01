@@ -606,6 +606,26 @@ def _build_epg_cache(target, xml_path=None):
         nonlocal matched_count, unmatched_count
         epg_id_to_entry = {item['channel_id']: item for item in epg_entries}
         
+        uuid_to_virtual_num = {}
+        if target == 'tivimate':
+            db_channels = ModelChannel.get_all()
+            def safe_float_convert(val):
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return 9999.0
+            active_db_channels = []
+            for r in db_channels:
+                try:
+                    enabled = bool(getattr(r, 'enabled', True))
+                except Exception:
+                    enabled = True
+                if enabled:
+                    active_db_channels.append(r)
+            active_db_channels.sort(key=lambda r: safe_float_convert(getattr(r, 'number', 9999)))
+            for idx, r in enumerate(active_db_channels):
+                uuid_to_virtual_num[r.channel_uuid] = idx + 1
+        
         for row in ModelChannel.get_all():
             try:
                 enabled = bool(getattr(row, 'enabled', True))
@@ -680,10 +700,13 @@ def _build_epg_cache(target, xml_path=None):
                 continue
 
             channel_elem.set('id', channel_uuid)
-            try:
-                ch_num = int(getattr(row, 'number', 0) or 0)
-            except (ValueError, TypeError):
-                ch_num = 0
+            if target == 'tivimate':
+                ch_num = uuid_to_virtual_num.get(channel_uuid, 0)
+            else:
+                try:
+                    ch_num = int(getattr(row, 'number', 0) or 0)
+                except (ValueError, TypeError):
+                    ch_num = 0
 
             if target == 'tvh':
                 insert_number = str(P.ModelSetting.get('basic_epg_tvh_insert_number') or 'False').strip().lower() in ['true', 'on', '1', 'yes', 'y']
