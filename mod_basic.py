@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# Revert: Completely roll back Plex Proxy features (2026-07-01)
 import importlib
 import sys
 import os
