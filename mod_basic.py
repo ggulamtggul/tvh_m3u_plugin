@@ -608,23 +608,8 @@ def _build_epg_cache(target, xml_path=None):
         
         uuid_to_virtual_num = {}
         if target == 'tivimate':
-            db_channels = ModelChannel.get_all()
-            def safe_float_convert(val):
-                try:
-                    return float(val)
-                except (ValueError, TypeError):
-                    return 9999.0
-            active_db_channels = []
-            for r in db_channels:
-                try:
-                    enabled = bool(getattr(r, 'enabled', True))
-                except Exception:
-                    enabled = True
-                if enabled:
-                    active_db_channels.append(r)
-            active_db_channels.sort(key=lambda r: safe_float_convert(getattr(r, 'number', 9999)))
-            for idx, r in enumerate(active_db_channels):
-                uuid_to_virtual_num[r.channel_uuid] = idx + 1
+            from .task_m3u import TaskM3U
+            uuid_to_virtual_num = TaskM3U.get_tivimate_virtual_num_map()
         
         for row in ModelChannel.get_all():
             try:

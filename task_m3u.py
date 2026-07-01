@@ -1627,6 +1627,40 @@ class TaskM3U(TaskBase):
         return f'#EXTINF:-1 {" ".join(attrs)},{tvg_name_text}'
 
     @staticmethod
+    def get_tivimate_virtual_num_map():
+        """
+        TiviMate용 정렬 및 순차 가상 번호 매핑 생성
+        """
+        try:
+            from model import ModelChannel
+            db_channels = ModelChannel.get_all()
+            def safe_float_convert(val):
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return 9999.0
+            active_db_channels = []
+            for r in db_channels:
+                try:
+                    enabled = bool(getattr(r, 'enabled', True))
+                except Exception:
+                    enabled = True
+                if enabled:
+                    active_db_channels.append(r)
+            active_db_channels.sort(key=lambda r: safe_float_convert(getattr(r, 'number', 9999)))
+            
+            uuid_to_virtual_num = {}
+            for idx, r in enumerate(active_db_channels):
+                uuid_to_virtual_num[r.channel_uuid] = idx + 1
+            return uuid_to_virtual_num
+        except Exception as e:
+            try:
+                logger.error(f'[ff_tvh_m3u] get_tivimate_virtual_num_map failed: {str(e)}')
+            except NameError:
+                print(f'[ff_tvh_m3u] get_tivimate_virtual_num_map failed: {str(e)}')
+            return {}
+
+    @staticmethod
     def build_m3u(target='tivimate'):
         try:
             target = str(target or 'tivimate').strip().lower()
@@ -1652,24 +1686,7 @@ class TaskM3U(TaskBase):
             
             uuid_to_virtual_num = {}
             if target == 'tivimate':
-                from model import ModelChannel
-                db_channels = ModelChannel.get_all()
-                def safe_float_convert(val):
-                    try:
-                        return float(val)
-                    except (ValueError, TypeError):
-                        return 9999.0
-                active_db_channels = []
-                for r in db_channels:
-                    try:
-                        enabled = bool(getattr(r, 'enabled', True))
-                    except Exception:
-                        enabled = True
-                    if enabled:
-                        active_db_channels.append(r)
-                active_db_channels.sort(key=lambda r: safe_float_convert(getattr(r, 'number', 9999)))
-                for idx, r in enumerate(active_db_channels):
-                    uuid_to_virtual_num[r.channel_uuid] = idx + 1
+                uuid_to_virtual_num = TaskM3U.get_tivimate_virtual_num_map()
 
             added_count = 0
             skipped_disabled = 0
