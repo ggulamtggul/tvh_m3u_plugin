@@ -1632,7 +1632,7 @@ class TaskM3U(TaskBase):
         TiviMate용 정렬 및 순차 가상 번호 매핑 생성
         """
         try:
-            from model import ModelChannel
+            from .model import ModelChannel
             db_channels = ModelChannel.get_all()
             def safe_float_convert(val):
                 try:
